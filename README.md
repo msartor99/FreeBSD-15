@@ -16,6 +16,9 @@ thats all folks
 update : now the if_atlantic.ko patched and an little script to install it available.
 
 Enjoy!
+
+
+-
 Technical Bug Report: if_atlantic Instability and PHY Lockup on FreeBSD 15.0 (Lenovo P620)
 1. Hardware Information
 
