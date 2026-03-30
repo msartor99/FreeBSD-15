@@ -21,7 +21,8 @@ Enjoy!
 
 ________________________________________________________________________________________
 
-new version, Setup_postinstall_generic.sh use bsddialog for parameters
+new version, Setup_postinstall_genericV63.sh use bsddialog for parameters
 
+.
 
 Enjoy!
