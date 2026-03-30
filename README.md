@@ -19,3 +19,9 @@ use putty to open ssh shell by network.
 
 Enjoy!
 
+________________________________________________________________________________________
+
+new version, Setup_P620_275_AMD.txt use bsddialog for parameters
+
+
+Enjoy!
