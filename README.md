@@ -1,12 +1,12 @@
 # FreeBSD-15 post installation
 
-installation of FreeBSD is simple, but configuring for daily use its little bit more difficult.
+Installing FreeBSD is simple, but configuring it for everyday use is a bit more complex.
 
-I search on a lot of website, forum and see video on Youtube to find my best configuration.
+I consulted numerous websites, forums, and YouTube videos to find the optimal configuration.
 
-this is my last version of instruction guide to made post installation.
+Here is the latest version of my installation guide.
 
-this is not a script, only list of instruction to run on FreeBSD 15.
+This isn't a script, but simply a list of instructions to follow on FreeBSD 15.
 
 Launch PuTTY to connect to an SSH session as root over the network.
 
