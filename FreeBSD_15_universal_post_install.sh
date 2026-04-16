@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # --- CONFIGURATION AND VERIFICATION ---
-TITLE="FreeBSD 15 Post-Installation (Idempotent)"
+TITLE="FreeBSD 15 Post-Installation (Idempotent) - P620 Edition"
 BACKTITLE="Workstation Configuration by Gemini"
 DB_PREFIX="/var/db/.fbsd_setup_done_"
 
@@ -59,9 +59,9 @@ Do you accept these conditions to continue?"
 # --- FUSED INITIAL SETUP (Option 1) ---
 
 initial_setup() {
-    bsddialog --infobox "Starting System, CPU, Hardware and Language Setup..." 5 60
+    bsddialog --infobox "Starting System, Hardware Monitoring & Base Setup..." 5 60
     
-    # 1. Base System & PKG
+    # 1. Base System & Vital Packages
     pkg update -y
     
     # Explicit Sudo verification
@@ -70,7 +70,7 @@ initial_setup() {
         pkg install -y sudo
     fi
     
-    pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools
+    pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
     
     bsddialog --msgbox "Visudo will now open. Please add '%wheel ALL=(ALL:ALL) ALL'." 8 50
     visudo
@@ -86,23 +86,65 @@ initial_setup() {
     sysrc rc_startmsgs=NO
     add_line_if_missing "kern.sched.preempt_thresh=224" /etc/sysctl.conf
     add_line_if_missing "kern.ipc.shm_allow_removed=1" /etc/sysctl.conf
-    sysrc -f /boot/loader.conf tmpfs_load=YES aio_load=YES
     sysctl net.local.stream.recvspace=65536 net.local.stream.sendspace=65536
+    sysrc -f /boot/loader.conf tmpfs_load=YES aio_load=YES nvme_load=YES
     
-    # Linux Compat
+    # Linux Compat & Services
     sysrc linux_enable=YES linux64_enable=YES
     service linux restart 2>/dev/null || service linux start
 
-    # Smartd
     sysrc smartd_enable=YES
     [ ! -f /usr/local/etc/smartd.conf ] && cp /usr/local/etc/smartd.conf.sample /usr/local/etc/smartd.conf
     service smartd restart 2>/dev/null || service smartd start
 
-    # 2. CPU Management
-    CPU_TYPE=$(bsddialog --menu "Select CPU Type:" 12 50 2 "Intel" "Coretemp/Ucode" "AMD" "Amdtemp/Ucode" 3>&1 1>&2 2>&3)
+    # 2. CPU Management & Power/Sensor Configuration
+    CPU_TYPE=$(bsddialog --menu "Select CPU Type & Energy Management:" 13 70 2 \
+        "Intel" "Intel Ucode & Coretemp" \
+        "AMD" "AMD Ucode, Amdtemp, IPMI & SMBus (Lenovo P620)" 3>&1 1>&2 2>&3)
+        
     case $CPU_TYPE in
-        Intel) pkg install -y cpu-microcode sensors; sysrc -f /boot/loader.conf coretemp_load="YES" cpu_microcode_name="/boot/firmware/intel-ucode.bin" ;;
-        AMD) pkg install -y sensors cpu-microcode; sysrc -f /boot/loader.conf amdtemp_load="YES" cpu_microcode_load="YES" cpu_microcode_name="/boot/firmware/amd-ucode.bin" ;;
+        Intel) 
+            pkg install -y cpu-microcode sensors
+            sysrc -f /boot/loader.conf coretemp_load="YES"
+            sysrc -f /boot/loader.conf cpu_microcode_name="/boot/firmware/intel-ucode.bin"
+            
+            # Basic devfs rules for NVMe
+            if ! grep -q "localrules" /etc/devfs.rules 2>/dev/null; then
+                cat >> /etc/devfs.rules <<EOF
+[localrules=10]
+add path 'nvme*' mode 0660 group operator
+add path 'nvd*' mode 0660 group operator
+add path 'da*' mode 0660 group operator
+add path 'ada*' mode 0660 group operator
+EOF
+            fi
+            sysrc devfs_system_ruleset="localrules"
+            service devfs restart
+            ;;
+        AMD) 
+            pkg install -y sensors cpu-microcode
+            sysrc -f /boot/loader.conf amdtemp_load="YES"
+            sysrc -f /boot/loader.conf cpu_microcode_load="YES"
+            sysrc -f /boot/loader.conf cpu_microcode_name="/boot/firmware/amd-ucode.bin"
+            
+            # Specific Workstation/P620 Power & Monitoring modules
+            sysrc -f /boot/loader.conf ipmi_load="YES"
+            sysrc -f /boot/loader.conf amdsmb_load="YES"
+            
+            # Devfs rules for NVMe AND IPMI sensors so KDE/btop can read them
+            if ! grep -q "localrules" /etc/devfs.rules 2>/dev/null; then
+                cat >> /etc/devfs.rules <<EOF
+[localrules=10]
+add path 'nvme*' mode 0660 group operator
+add path 'nvd*' mode 0660 group operator
+add path 'da*' mode 0660 group operator
+add path 'ada*' mode 0660 group operator
+add path 'ipmi0' mode 0660 group operator
+EOF
+            fi
+            sysrc devfs_system_ruleset="localrules"
+            service devfs restart
+            ;;
     esac
 
     # 3. Hardware Base
