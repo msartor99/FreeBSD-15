@@ -70,7 +70,7 @@ initial_setup() {
         pkg install -y sudo
     fi
     
-    pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop ImageMagick7 smartmontools
+    pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools
     
     bsddialog --msgbox "Visudo will now open. Please add '%wheel ALL=(ALL:ALL) ALL'." 8 50
     visudo
@@ -268,7 +268,15 @@ drm_config() {
         esac
         pkg install -y drm-kmod
     fi
-    pkg install -y wayland xwayland
+    
+    # --- NVIDIA / WAYLAND SAFETY CHECK ---
+    if pciconf -lv | grep -iq "NVIDIA" || [ -f "${DB_PREFIX}2" ]; then
+        bsddialog --infobox "NVIDIA GPU or configuration detected.\nSkipping Wayland/Xwayland installation to prevent conflicts." 5 65
+        sleep 2
+    else
+        pkg install -y wayland xwayland
+    fi
+    
     if ! sysrc -n kld_list | grep -q "$DRM_DRIVER"; then sysrc kld_list+="$DRM_DRIVER"; fi
     mark_done "3"
 }
