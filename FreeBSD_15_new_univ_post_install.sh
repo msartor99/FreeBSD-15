@@ -290,6 +290,12 @@ EOF
     mark_done "1"
 }
 
+switch_latest() { 
+    sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf
+    pkg update -f && pkg upgrade -y
+    mark_done "2" 
+}
+
 # --- RESOLUTION SETTING FUNCTION (CONSOLE ONLY) ---
 set_monitor_resolution() {
     RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:\n(Useful to avoid tiny text on 27-inch 4K monitors)" 17 75 6 \
@@ -372,7 +378,7 @@ nvidia_config() {
     nvidia-xconfig
     
     set_monitor_resolution
-    mark_done "2"
+    mark_done "3"
 }
 
 drm_config() {
@@ -412,7 +418,7 @@ drm_config() {
     fi
     
     # --- NVIDIA / WAYLAND SAFETY CHECK ---
-    if pciconf -lv | grep -iq "NVIDIA" || [ -f "${DB_PREFIX}2" ]; then
+    if pciconf -lv | grep -iq "NVIDIA" || [ -f "${DB_PREFIX}3" ]; then
         bsddialog --infobox "NVIDIA GPU or configuration detected.\nSkipping Wayland/Xwayland installation to prevent conflicts." 5 65
         sleep 2
     else
@@ -422,7 +428,7 @@ drm_config() {
     if ! sysrc -n kld_list | grep -q "$DRM_DRIVER"; then sysrc kld_list+="$DRM_DRIVER"; fi
     
     set_monitor_resolution
-    mark_done "3"
+    mark_done "4"
 }
 
 # --- DESKTOP ENVIRONMENTS ---
@@ -431,13 +437,13 @@ plasma_config() {
     bsddialog --infobox "Installing Plasma 6 (KDE) and native tools..." 5 60
     pkg install -y --g "plasma6-*" "kf6*"
     pkg install -y pavucontrol kate konsole ark remmina dolphin Kvantum octopkg
-    mark_done "4"
+    mark_done "5"
 }
 
 mate_config() { 
     bsddialog --infobox "Installing MATE Desktop..." 5 50
     pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs
-    mark_done "5"
+    mark_done "6"
 }
 
 xfce_config() {
@@ -447,7 +453,7 @@ xfce_config() {
     # Hide experimental XFCE Wayland session from SDDM to prevent accidental black screens
     rm -f /usr/local/share/wayland-sessions/xfce*.desktop 2>/dev/null
     
-    mark_done "6"
+    mark_done "7"
 }
 
 # --- SERVICES & APPS ---
@@ -456,7 +462,7 @@ apps_config() {
     bsddialog --infobox "Installing general applications and fonts..." 5 60
     pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
     sysrc webcamd_enable=YES
-    mark_done "7"
+    mark_done "8"
 }
 
 remote_access_config() { 
@@ -524,7 +530,7 @@ EOF
     chmod +x /usr/local/etc/rc.d/x11vnc
     sysrc x11vnc_enable="YES"
     
-    mark_done "8"
+    mark_done "9"
 }
 
 wine_config() {
@@ -544,7 +550,7 @@ wine_config() {
 
     bsddialog --infobox "Installing WINE (with native WoW64 support) and Winetricks..." 5 70
     pkg install -y wine winetricks
-    mark_done "9"
+    mark_done "a"
 }
 
 samba_config() { 
@@ -619,26 +625,26 @@ EOF
         (echo "$SMB_PASS"; echo "$SMB_PASS") | smbpasswd -s -a "$SMB_USER"
     fi
 
-    mark_done "a"
+    mark_done "b"
 }
 
 vbox_host_config() {
     if is_vbox_guest; then bsddialog --msgbox "VirtualBox Host blocked inside a VM." 8 50; return; fi
     pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
     pw groupmod vboxusers -m root; [ -n "$USER_NAME" ] && pw groupmod vboxusers -m "$USER_NAME"
-    mark_done "b"
+    mark_done "c"
 }
 
 multimedia_config() {
     bsddialog --infobox "Installing Multimedia Creation tools (GIMP, Blender, OBS, etc.)..." 5 70
     pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ardour ffmpeg gstreamer1-plugins-all
-    mark_done "c"
+    mark_done "d"
 }
 
 development_config() {
     bsddialog --infobox "Installing Development Tools, Editors & Debuggers..." 5 70
     pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode
-    mark_done "d"
+    mark_done "e"
 }
 
 nasa_theme() { 
@@ -678,10 +684,8 @@ EOF
     sysrc -f /boot/loader.conf splash_txt_load="YES"
     sysrc -f /boot/loader.conf splash_pcx_load="YES"
     
-    mark_done "e"
+    mark_done "f"
 }
-
-switch_latest() { sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "f"; }
 
 # --- MAIN MENU ---
 
@@ -691,38 +695,38 @@ while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
         --menu "Select Installation Step (Use Up/Down or type the character):" 22 85 16 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Language, User)")" \
-        "2" "$(get_label "2" "GPU: NVIDIA (Auto-Detect Legacy/Latest)")" \
-        "3" "$(get_label "3" "GPU/VM: DRM-KMOD & VBox Guest Auto-Setup")" \
-        "4" "$(get_label "4" "Desktop: Plasma 6 + KDE Tools")" \
-        "5" "$(get_label "5" "Desktop: MATE")" \
-        "6" "$(get_label "6" "Desktop: XFCE4")" \
-        "7" "$(get_label "7" "Basic Apps & Fonts (Web, Mail, VLC)")" \
-        "8" "$(get_label "8" "Remote Access: XRDP (New Session) & x11vnc (Console)")" \
-        "9" "$(get_label "9" "WINE & Winetricks (Windows Apps - Needs LATEST)")" \
-        "a" "$(get_label "a" "Samba Server (Interactive)")" \
-        "b" "$(get_label "b" "VirtualBox 7.2 Host (Blocked in VM)")" \
-        "c" "$(get_label "c" "Multimedia Creation (GIMP, Blender, OBS...)")" \
-        "d" "$(get_label "d" "Dev Tools & Editors (GCC, Python, VSCode, GDB)")" \
-        "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
-        "f" "$(get_label "f" "Upgrade to LATEST Branch")" \
+        "2" "$(get_label "2" "Upgrade to LATEST Branch")" \
+        "3" "$(get_label "3" "GPU: NVIDIA (Auto-Detect Legacy/Latest)")" \
+        "4" "$(get_label "4" "GPU/VM: DRM-KMOD & VBox Guest Auto-Setup")" \
+        "5" "$(get_label "5" "Desktop: Plasma 6 + KDE Tools")" \
+        "6" "$(get_label "6" "Desktop: MATE")" \
+        "7" "$(get_label "7" "Desktop: XFCE4")" \
+        "8" "$(get_label "8" "Basic Apps & Fonts (Web, Mail, VLC)")" \
+        "9" "$(get_label "9" "Remote Access: XRDP (New Session) & x11vnc (Console)")" \
+        "a" "$(get_label "a" "WINE & Winetricks (Windows Apps - Needs LATEST)")" \
+        "b" "$(get_label "b" "Samba Server (Interactive)")" \
+        "c" "$(get_label "c" "VirtualBox 7.2 Host (Blocked in VM)")" \
+        "d" "$(get_label "d" "Multimedia Creation (GIMP, Blender, OBS...)")" \
+        "e" "$(get_label "e" "Dev Tools & Editors (GCC, Python, VSCode, GDB)")" \
+        "f" "$(get_label "f" "NASA Theme (SDDM & Boot)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
         1) initial_setup ;;
-        2) nvidia_config ;;
-        3) drm_config ;;
-        4) plasma_config ;;
-        5) mate_config ;;
-        6) xfce_config ;;
-        7) apps_config ;;
-        8) remote_access_config ;;
-        9) wine_config ;;
-        a) samba_config ;;
-        b) vbox_host_config ;;
-        c) multimedia_config ;;
-        d) development_config ;;
-        e) nasa_theme ;;
-        f) switch_latest ;;
+        2) switch_latest ;;
+        3) nvidia_config ;;
+        4) drm_config ;;
+        5) plasma_config ;;
+        6) mate_config ;;
+        7) xfce_config ;;
+        8) apps_config ;;
+        9) remote_access_config ;;
+        a) wine_config ;;
+        b) samba_config ;;
+        c) vbox_host_config ;;
+        d) multimedia_config ;;
+        e) development_config ;;
+        f) nasa_theme ;;
         q|*) break ;;
     esac
 done
