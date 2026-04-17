@@ -288,20 +288,30 @@ EOF
     mark_done "1"
 }
 
-# --- RESOLUTION SETTING FUNCTION ---
+# --- RESOLUTION SETTING FUNCTION (CONSOLE ONLY) ---
 set_monitor_resolution() {
-    RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:\n(Useful to avoid tiny text on 27-inch 4K monitors)" 15 75 3 \
+    RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:\n(Useful to avoid tiny text on 27-inch 4K monitors)" 16 75 5 \
         "Native" "Maximum Monitor Capability (Default)" \
+        "3840x2160" "Force 3840x2160 (4K UHD)" \
         "2560x1440" "Force 2560x1440 (Better text size for 27\" 4K)" \
-        "1920x1080" "Force 1920x1080 (Standard Full HD)" 3>&1 1>&2 2>&3)
+        "1920x1080" "Force 1920x1080 (Standard Full HD)" \
+        "Custom" "Type a custom resolution manually" 3>&1 1>&2 2>&3)
 
+    [ -z "$RES_CHOICE" ] && return
+    
+    # Gestion de l'entrée manuelle personnalisée
+    if [ "$RES_CHOICE" = "Custom" ]; then
+        RES_CHOICE=$(bsddialog --inputbox "Enter custom resolution (e.g., 2560x1080):" 9 50 "2560x1440" 3>&1 1>&2 2>&3)
+        [ -z "$RES_CHOICE" ] && RES_CHOICE="Native"
+    fi
+
+    # Application de la résolution sélectionnée
     mkdir -p /usr/local/share/sddm/scripts/
     
-    if [ "$RES_CHOICE" = "2560x1440" ] || [ "$RES_CHOICE" = "1920x1080" ]; then
+    if [ "$RES_CHOICE" != "Native" ]; then
         # Force SDDM Login screen resolution
         cat > /usr/local/share/sddm/scripts/Xsetup <<EOF
 #!/bin/sh
-# Auto-detect connected output and force resolution
 OUTPUT=\$(xrandr | grep " connected" | awk '{print \$1}' | head -n 1)
 if [ -n "\$OUTPUT" ]; then
     xrandr --output "\$OUTPUT" --mode $RES_CHOICE
@@ -309,7 +319,7 @@ fi
 EOF
         chmod +x /usr/local/share/sddm/scripts/Xsetup
         
-        # Force KDE X11 User Session resolution
+        # Force KDE/MATE X11 User Session resolution
         mkdir -p /usr/local/etc/xdg/autostart/
         cat > /usr/local/etc/xdg/autostart/force-resolution.desktop <<EOF
 [Desktop Entry]
@@ -372,8 +382,8 @@ drm_config() {
             *Intel*) 
                 DRM_DRIVER="i915kms"
                 bsddialog --infobox "Intel GPU detected. Installing DRM, Firmware, VAAPI & Audio Routing..." 5 70
-                # Ajout des pilotes Media/VAAPI pour l'accélération vidéo matérielle Intel
-                pkg install -y drm-kmod gpu-firmware-intel-kmod mixertui intel-media-driver libva-intel-driver libva-utils
+                # Correction des noms de paquets stricts pour FreeBSD
+                pkg install -y drm-kmod gpu-firmware-kmod mixertui libva-intel-media-driver libva-intel-driver libva-utils
                 
                 # Chargement temporaire pour initialiser les sondes audio intégrées
                 kldload i915kms 2>/dev/null
@@ -389,7 +399,7 @@ drm_config() {
                 ;;
             *AMD*|*ATI*) 
                 if echo "$VGA_DEVICE" | grep -iqE "Radeon HD|Radeon R[579]|FirePro"; then DRM_DRIVER="radeonkms"; else DRM_DRIVER="amdgpu"; fi 
-                pkg install -y drm-kmod
+                pkg install -y drm-kmod gpu-firmware-kmod
                 ;;
             *) bsddialog --msgbox "No supported GPU detected." 8 50; return ;;
         esac
@@ -439,10 +449,46 @@ EOF
     mark_done "6"
 }
 
-xrdp_config() { 
-    pkg install -y xrdp xorgxrdp; sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
+# --- REMOTE DESKTOP (XRDP & VNC) ---
+remote_access_config() { 
+    bsddialog --infobox "Installing XRDP (Virtual Sessions) and x11vnc (Physical Console)..." 5 70
+    pkg install -y xrdp xorgxrdp x11vnc
+    
+    # 1. XRDP Setup
+    sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
     [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
-    echo 'export LANG=fr_FR.UTF-8' > /usr/local/etc/xrdp/startwm.sh; echo 'exec startplasma-x11' >> /usr/local/etc/xrdp/startwm.sh; chmod 555 /usr/local/etc/xrdp/startwm.sh
+    echo 'export LANG=fr_FR.UTF-8' > /usr/local/etc/xrdp/startwm.sh
+    echo 'exec startplasma-x11' >> /usr/local/etc/xrdp/startwm.sh
+    chmod 555 /usr/local/etc/xrdp/startwm.sh
+    
+    # 2. VNC Console Setup (x11vnc)
+    VNC_PASS=$(bsddialog --title "VNC Console Setup" --passwordbox "Create a password for VNC access to the physical screen (SDDM/Session):" 9 60 3>&1 1>&2 2>&3)
+    if [ -n "$VNC_PASS" ]; then
+        x11vnc -storepasswd "$VNC_PASS" /usr/local/etc/x11vnc.pwd
+        chmod 600 /usr/local/etc/x11vnc.pwd
+    fi
+    
+    # Service script for x11vnc to attach to display :0 automatically
+    cat > /usr/local/etc/rc.d/x11vnc << 'EOF'
+#!/bin/sh
+# REQUIRE: LOGIN dbus sddm
+# PROVIDE: x11vnc
+
+. /etc/rc.subr
+
+name="x11vnc"
+rcvar="x11vnc_enable"
+command="/usr/local/bin/x11vnc"
+command_args="-display :0 -auth guess -forever -loop -noxdamage -repeat -rfbauth /usr/local/etc/x11vnc.pwd -rfbport 5900 -shared -bg -o /var/log/x11vnc.log"
+
+load_rc_config $name
+: ${x11vnc_enable:="NO"}
+
+run_rc_command "$1"
+EOF
+    chmod +x /usr/local/etc/rc.d/x11vnc
+    sysrc x11vnc_enable="YES"
+    
     mark_done "7"
 }
 
@@ -527,7 +573,7 @@ while true; do
         "4" "$(get_label "4" "Desktop: Plasma 6 + KDE Tools")" \
         "5" "$(get_label "5" "Desktop: MATE")" \
         "6" "$(get_label "6" "Samba Server")" \
-        "7" "$(get_label "7" "XRDP Remote Desktop")" \
+        "7" "$(get_label "7" "Remote Access: XRDP (New Session) & x11vnc (Console)")" \
         "8" "$(get_label "8" "VirtualBox 7.2 Host (Blocked in VM)")" \
         "9" "$(get_label "9" "Basic Apps & Fonts (Web, Mail, VLC)")" \
         "A" "$(get_label "A" "Multimedia Creation (GIMP, Blender, OBS...)")" \
@@ -543,7 +589,7 @@ while true; do
         4) plasma_config ;;
         5) mate_config ;;
         6) samba_config ;;
-        7) xrdp_config ;;
+        7) remote_access_config ;;
         8) vbox_host_config ;;
         9) apps_config ;;
         A|a) multimedia_config ;;
