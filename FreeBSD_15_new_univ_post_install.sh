@@ -468,6 +468,16 @@ apps_config() {
     bsddialog --infobox "Installing general applications and fonts..." 5 60
     pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
     sysrc webcamd_enable=YES
+    # Configuration vitale pour Webcamd
+        
+    if ! sysrc -n kld_list | grep -q "cuse"; then 
+        sysrc kld_list+="cuse"
+    fi
+    
+    # Ajout de l'utilisateur principal au groupe webcamd s'il a été défini à l'étape 1
+    if [ -n "$USER_NAME" ]; then
+        pw groupmod webcamd -m "$USER_NAME" 2>/dev/null
+    fi
     mark_done "7"
 }
 
