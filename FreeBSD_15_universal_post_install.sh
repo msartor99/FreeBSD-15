@@ -72,8 +72,8 @@ initial_setup() {
     
     pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
     
-    bsddialog --msgbox "Visudo will now open. Please add '%wheel ALL=(ALL:ALL) ALL'." 8 50
-    visudo
+    #bsddialog --msgbox "Visudo will now open. Please add '%wheel ALL=(ALL:ALL) ALL'." 8 50
+    #visudo
 
     sed -i '' 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     add_line_if_missing "PermitRootLogin yes" /etc/ssh/sshd_config
