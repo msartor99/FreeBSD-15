@@ -1,4 +1,4 @@
-# FreeBSD-15 post installation
+# FreeBSD 15 post installation
 
 Installing FreeBSD is simple, but configuring it for everyday use is a bit more complex.
 
