@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # --- CONFIGURATION AND VERIFICATION ---
-TITLE="FreeBSD 15 Post-Installation (Idempotent) - P620 Edition"
+TITLE="FreeBSD 15 Post-Installation (Idempotent) - Multi-Hardware"
 BACKTITLE="Workstation Configuration by Gemini"
 DB_PREFIX="/var/db/.fbsd_setup_done_"
 
@@ -71,9 +71,6 @@ initial_setup() {
     fi
     
     pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
-    
-    #bsddialog --msgbox "Visudo will now open. Please add '%wheel ALL=(ALL:ALL) ALL'." 8 50
-    #visudo
 
     sed -i '' 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     add_line_if_missing "PermitRootLogin yes" /etc/ssh/sshd_config
@@ -99,8 +96,8 @@ initial_setup() {
 
     # 2. CPU Management & Power/Sensor Configuration
     CPU_TYPE=$(bsddialog --menu "Select CPU Type & Energy Management:" 13 70 2 \
-        "Intel CPU" "Intel Ucode & Coretemp" \
-        "AMD CPU" "AMD Ucode, Amdtemp, IPMI & SMBus" 3>&1 1>&2 2>&3)
+        "Intel" "Intel Ucode, Coretemp, IPMI & SMBus" \
+        "AMD" "AMD Ucode, Amdtemp, IPMI & SMBus (Lenovo P620)" 3>&1 1>&2 2>&3)
         
     case $CPU_TYPE in
         Intel) 
@@ -108,7 +105,12 @@ initial_setup() {
             sysrc -f /boot/loader.conf coretemp_load="YES"
             sysrc -f /boot/loader.conf cpu_microcode_name="/boot/firmware/intel-ucode.bin"
             
-            # Basic devfs rules for NVMe
+            # Specific Workstation Power & Monitoring modules for Intel
+            sysrc -f /boot/loader.conf ipmi_load="YES"
+            sysrc -f /boot/loader.conf intsmb_load="YES"
+            sysrc -f /boot/loader.conf ichsmb_load="YES"
+            
+            # Devfs rules for NVMe AND IPMI sensors so KDE/btop can read them
             if ! grep -q "localrules" /etc/devfs.rules 2>/dev/null; then
                 cat >> /etc/devfs.rules <<EOF
 [localrules=10]
@@ -116,6 +118,7 @@ add path 'nvme*' mode 0660 group operator
 add path 'nvd*' mode 0660 group operator
 add path 'da*' mode 0660 group operator
 add path 'ada*' mode 0660 group operator
+add path 'ipmi0' mode 0660 group operator
 EOF
             fi
             sysrc devfs_system_ruleset="localrules"
@@ -273,9 +276,57 @@ EOF
     mark_done "1"
 }
 
+# --- RESOLUTION SETTING FUNCTION ---
+set_monitor_resolution() {
+    RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:\n(Useful to avoid tiny text on 27-inch 4K monitors)" 15 75 3 \
+        "Native" "Maximum Monitor Capability (Default)" \
+        "2560x1440" "Force 2560x1440 (Better text size for 27\" 4K)" \
+        "1920x1080" "Force 1920x1080 (Standard Full HD)" 3>&1 1>&2 2>&3)
+
+    mkdir -p /usr/local/share/sddm/scripts/
+    
+    if [ "$RES_CHOICE" = "2560x1440" ] || [ "$RES_CHOICE" = "1920x1080" ]; then
+        # Force SDDM Login screen resolution
+        cat > /usr/local/share/sddm/scripts/Xsetup <<EOF
+#!/bin/sh
+# Auto-detect connected output and force resolution
+OUTPUT=\$(xrandr | grep " connected" | awk '{print \$1}' | head -n 1)
+if [ -n "\$OUTPUT" ]; then
+    xrandr --output "\$OUTPUT" --mode $RES_CHOICE
+fi
+EOF
+        chmod +x /usr/local/share/sddm/scripts/Xsetup
+        
+        # Force KDE X11 User Session resolution
+        mkdir -p /usr/local/etc/xdg/autostart/
+        cat > /usr/local/etc/xdg/autostart/force-resolution.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Force Resolution
+Exec=sh -c "OUTPUT=\$(xrandr | grep ' connected' | awk '{print \$1}' | head -n 1); xrandr --output \$OUTPUT --mode $RES_CHOICE"
+X-KDE-autostart-phase=1
+EOF
+        bsddialog --infobox "Resolution will be forced to $RES_CHOICE via xrandr." 4 60
+        sleep 2
+    else
+        # Native: Clean up scripts if they existed
+        rm -f /usr/local/share/sddm/scripts/Xsetup 2>/dev/null
+        rm -f /usr/local/etc/xdg/autostart/force-resolution.desktop 2>/dev/null
+    fi
+}
+
+# --- GPU CONFIGURATIONS ---
+
 nvidia_config() {
-    GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | cut -d "'" -f 2)
+    # Extraction propre du nom de la carte (entre les crochets) pour un affichage net
+    GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | grep -o '\[.*\]' | tr -d '[]')
+    
+    # Fallback au cas où les crochets ne sont pas présents dans la sortie pciconf
+    if [ -z "$GPU_INFO" ]; then
+        GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | cut -d "'" -f 2)
+    fi
     [ -z "$GPU_INFO" ] && GPU_INFO="Unknown Nvidia GPU"
+    
     REC_DRIVER="nvidia-driver"
     if echo "$GPU_INFO" | grep -iqE "Quadro P|GTX 10|Pascal"; then REC_DRIVER="nvidia-driver-580"
     elif echo "$GPU_INFO" | grep -iqE "Quadro M|GTX 9|Maxwell"; then REC_DRIVER="nvidia-driver-470"
@@ -290,6 +341,8 @@ nvidia_config() {
     sysrc kld_list+="nvidia-modeset"
     add_line_if_missing "hw.nvidiadrm.modeset=\"1\"" /boot/loader.conf
     nvidia-xconfig
+    
+    set_monitor_resolution
     mark_done "2"
 }
 
@@ -304,11 +357,30 @@ drm_config() {
         add_line_if_missing "vboxvideo_load=\"YES\"" /boot/loader.conf; DRM_DRIVER="vboxvideo"
     else
         case "$VGA_VENDOR" in
-            *Intel*) DRM_DRIVER="i915kms" ;;
-            *AMD*|*ATI*) if echo "$VGA_DEVICE" | grep -iqE "Radeon HD|Radeon R[579]|FirePro"; then DRM_DRIVER="radeonkms"; else DRM_DRIVER="amdgpu"; fi ;;
+            *Intel*) 
+                DRM_DRIVER="i915kms"
+                bsddialog --infobox "Intel GPU detected. Installing DRM, Firmware, VAAPI & Audio Routing..." 5 70
+                # Ajout des pilotes Media/VAAPI pour l'accélération vidéo matérielle Intel
+                pkg install -y drm-kmod gpu-firmware-intel-kmod mixertui intel-media-driver libva-intel-driver libva-utils
+                
+                # Chargement temporaire pour initialiser les sondes audio intégrées
+                kldload i915kms 2>/dev/null
+                sleep 2
+                
+                # Auto-détection intelligente du canal DisplayPort / HDMI via sndstat
+                DP_PCM=$(cat /dev/sndstat 2>/dev/null | grep -iE 'hdmi|dp' | grep -o 'pcm[0-9]*' | sed 's/pcm//' | head -n 1)
+                if [ -n "$DP_PCM" ]; then
+                    sed -i '' '/hw.snd.default_unit/d' /etc/sysctl.conf
+                    echo "hw.snd.default_unit=$DP_PCM" >> /etc/sysctl.conf
+                    sysctl hw.snd.default_unit=$DP_PCM >/dev/null 2>&1
+                fi
+                ;;
+            *AMD*|*ATI*) 
+                if echo "$VGA_DEVICE" | grep -iqE "Radeon HD|Radeon R[579]|FirePro"; then DRM_DRIVER="radeonkms"; else DRM_DRIVER="amdgpu"; fi 
+                pkg install -y drm-kmod
+                ;;
             *) bsddialog --msgbox "No supported GPU detected." 8 50; return ;;
         esac
-        pkg install -y drm-kmod
     fi
     
     # --- NVIDIA / WAYLAND SAFETY CHECK ---
@@ -320,6 +392,8 @@ drm_config() {
     fi
     
     if ! sysrc -n kld_list | grep -q "$DRM_DRIVER"; then sysrc kld_list+="$DRM_DRIVER"; fi
+    
+    set_monitor_resolution
     mark_done "3"
 }
 
@@ -332,7 +406,9 @@ plasma_config() {
 
 mate_config() { 
     bsddialog --infobox "Installing MATE Desktop..." 5 50
-    pkg install -y mate mate-desktop dsbmixer eom remmina xdg-user-dirs octopkg; mark_done "5"; 
+    # Installation propre de MATE avec pavucontrol et outils supplémentaires
+    pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs
+    mark_done "5"
 }
 
 samba_config() { 
