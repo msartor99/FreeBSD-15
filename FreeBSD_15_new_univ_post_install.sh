@@ -97,7 +97,7 @@ initial_setup() {
     service smartd restart 2>/dev/null || service smartd start
 
     # 2. CPU Management & Power/Sensor Configuration
-    CPU_TYPE=$(bsddialog --menu "Select CPU Type & Energy Management:" 13 70 2 \
+    CPU_TYPE=$(bsddialog --menu "Select CPU Type & Energy Management:" 13 85 2 \
         "Intel" "Intel CPU Firmware, Coretemp, IPMI & SMBus (I5 /I7 /I9 /Xeon )" \
         "AMD" "AMD CPU Firmware, AMDtemp, IPMI & SMBus (AMD Ryzen )" 3>&1 1>&2 2>&3)
         
@@ -452,6 +452,101 @@ xfce_config() {
 
 # --- SERVICES & APPS ---
 
+apps_config() { 
+    bsddialog --infobox "Installing general applications and fonts..." 5 60
+    pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
+    sysrc webcamd_enable=YES
+    mark_done "7"
+}
+
+remote_access_config() { 
+    bsddialog --infobox "Installing XRDP, x11vnc, and Zenity (for Desktop Chooser)..." 5 70
+    pkg install -y xrdp xorgxrdp x11vnc zenity
+    
+    # 1. XRDP Setup with GUI Chooser (Zenity)
+    sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
+    [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
+    
+    cat > /usr/local/etc/xrdp/startwm.sh << 'EOF'
+#!/bin/sh
+export LANG=fr_FR.UTF-8
+
+# Interface graphique pour choisir le bureau via RDP
+CHOICE=$(zenity --list --title="Session RDP - FreeBSD" \
+    --text="Choisissez votre environnement de bureau :" \
+    --radiolist --column="X" --column="Desktop Environment" \
+    TRUE "Plasma 6 (KDE)" FALSE "MATE Desktop" FALSE "XFCE4" \
+    --width=350 --height=250 2>/dev/null)
+
+case "$CHOICE" in
+    "MATE Desktop")
+        exec mate-session
+        ;;
+    "XFCE4")
+        exec startxfce4
+        ;;
+    *)
+        # Par défaut (Plasma) si on clique sur OK sans changer ou si on ferme la fenêtre
+        exec startplasma-x11
+        ;;
+esac
+EOF
+    chmod 555 /usr/local/etc/xrdp/startwm.sh
+    
+    # 2. VNC Console Setup (x11vnc)
+    # Saisie avec option --insecure pour afficher des astérisques lors de la frappe
+    VNC_PASS=$(bsddialog --title "VNC Console Setup" --insecure --passwordbox "Create a password for VNC access to the physical screen (SDDM/Session):" 9 60 3>&1 1>&2 2>&3)
+    if [ -n "$VNC_PASS" ]; then
+        x11vnc -storepasswd "$VNC_PASS" /usr/local/etc/x11vnc.pwd
+        chmod 600 /usr/local/etc/x11vnc.pwd
+    fi
+    
+    # Service script for x11vnc using daemon to run fully in the background with a delay
+    cat > /usr/local/etc/rc.d/x11vnc << 'EOF'
+#!/bin/sh
+# REQUIRE: LOGIN dbus sddm
+# PROVIDE: x11vnc
+
+. /etc/rc.subr
+
+name="x11vnc"
+rcvar="x11vnc_enable"
+command="/usr/sbin/daemon"
+
+# Use daemon to fork, wait 5s for SDDM to create authority, find it, and exec x11vnc
+command_args="-f sh -c 'sleep 5 && AUTH=\$(find /var/run/sddm -type f | head -n 1) && exec /usr/local/bin/x11vnc -display :0 -auth \"\$AUTH\" -forever -loop -noxdamage -repeat -rfbauth /usr/local/etc/x11vnc.pwd -rfbport 5900 -shared -o /var/log/x11vnc.log'"
+
+load_rc_config $name
+: ${x11vnc_enable:="NO"}
+
+run_rc_command "$1"
+EOF
+    chmod +x /usr/local/etc/rc.d/x11vnc
+    sysrc x11vnc_enable="YES"
+    
+    mark_done "8"
+}
+
+wine_config() {
+    # Check if the system is currently using the 'latest' branch
+    if grep -q "quarterly" /etc/pkg/FreeBSD.conf; then
+        local msg="ATTENTION: WINE nécessite des mises à jour très fréquentes pour bien fonctionner avec les jeux et applications Windows récentes.\n\nVotre système est actuellement configuré sur la branche 'quarterly' (trimestrielle).\n\nVoulez-vous basculer automatiquement sur la branche 'LATEST' maintenant avant d'installer WINE ?"
+        
+        if bsddialog --title "WINE Configuration" --yesno "$msg" 12 75; then
+            bsddialog --infobox "Switching to LATEST branch and updating packages..." 5 60
+            sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf
+            pkg update -f && pkg upgrade -y
+        else
+            bsddialog --msgbox "Installation de WINE annulée. Il est fortement déconseillé de l'utiliser sur la branche quarterly." 6 60
+            return
+        fi
+    fi
+
+    bsddialog --infobox "Installing WINE (with native WoW64 support) and Winetricks..." 5 70
+    pkg install -y wine winetricks
+    mark_done "9"
+}
+
 samba_config() { 
     pkg install -y samba416
     
@@ -524,101 +619,26 @@ EOF
         (echo "$SMB_PASS"; echo "$SMB_PASS") | smbpasswd -s -a "$SMB_USER"
     fi
 
-    mark_done "7"
-}
-
-remote_access_config() { 
-    bsddialog --infobox "Installing XRDP, x11vnc, and Zenity (for Desktop Chooser)..." 5 70
-    pkg install -y xrdp xorgxrdp x11vnc zenity
-    
-    # 1. XRDP Setup with GUI Chooser (Zenity)
-    sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
-    [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
-    
-    cat > /usr/local/etc/xrdp/startwm.sh << 'EOF'
-#!/bin/sh
-export LANG=fr_FR.UTF-8
-
-# Interface graphique pour choisir le bureau via RDP
-CHOICE=$(zenity --list --title="Session RDP - FreeBSD" \
-    --text="Choisissez votre environnement de bureau :" \
-    --radiolist --column="X" --column="Desktop Environment" \
-    TRUE "Plasma 6 (KDE)" FALSE "MATE Desktop" FALSE "XFCE4" \
-    --width=350 --height=250 2>/dev/null)
-
-case "$CHOICE" in
-    "MATE Desktop")
-        exec mate-session
-        ;;
-    "XFCE4")
-        exec startxfce4
-        ;;
-    *)
-        # Par défaut (Plasma) si on clique sur OK sans changer ou si on ferme la fenêtre
-        exec startplasma-x11
-        ;;
-esac
-EOF
-    chmod 555 /usr/local/etc/xrdp/startwm.sh
-    
-    # 2. VNC Console Setup (x11vnc)
-    # Saisie avec option --insecure pour afficher des astérisques lors de la frappe
-    VNC_PASS=$(bsddialog --title "VNC Console Setup" --insecure --passwordbox "Create a password for VNC access to the physical screen (SDDM/Session):" 9 60 3>&1 1>&2 2>&3)
-    if [ -n "$VNC_PASS" ]; then
-        x11vnc -storepasswd "$VNC_PASS" /usr/local/etc/x11vnc.pwd
-        chmod 600 /usr/local/etc/x11vnc.pwd
-    fi
-    
-    # Service script for x11vnc using daemon to run fully in the background with a delay
-    cat > /usr/local/etc/rc.d/x11vnc << 'EOF'
-#!/bin/sh
-# REQUIRE: LOGIN dbus sddm
-# PROVIDE: x11vnc
-
-. /etc/rc.subr
-
-name="x11vnc"
-rcvar="x11vnc_enable"
-command="/usr/sbin/daemon"
-
-# Use daemon to fork, wait 5s for SDDM to create authority, find it, and exec x11vnc
-command_args="-f sh -c 'sleep 5 && AUTH=\$(find /var/run/sddm -type f | head -n 1) && exec /usr/local/bin/x11vnc -display :0 -auth \"\$AUTH\" -forever -loop -noxdamage -repeat -rfbauth /usr/local/etc/x11vnc.pwd -rfbport 5900 -shared -o /var/log/x11vnc.log'"
-
-load_rc_config $name
-: ${x11vnc_enable:="NO"}
-
-run_rc_command "$1"
-EOF
-    chmod +x /usr/local/etc/rc.d/x11vnc
-    sysrc x11vnc_enable="YES"
-    
-    mark_done "8"
+    mark_done "a"
 }
 
 vbox_host_config() {
     if is_vbox_guest; then bsddialog --msgbox "VirtualBox Host blocked inside a VM." 8 50; return; fi
     pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
     pw groupmod vboxusers -m root; [ -n "$USER_NAME" ] && pw groupmod vboxusers -m "$USER_NAME"
-    mark_done "9"
-}
-
-apps_config() { 
-    bsddialog --infobox "Installing general applications and fonts..." 5 60
-    pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
-    sysrc webcamd_enable=YES
-    mark_done "a"
+    mark_done "b"
 }
 
 multimedia_config() {
     bsddialog --infobox "Installing Multimedia Creation tools (GIMP, Blender, OBS, etc.)..." 5 70
     pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ardour ffmpeg gstreamer1-plugins-all
-    mark_done "b"
+    mark_done "c"
 }
 
 development_config() {
     bsddialog --infobox "Installing Development Tools, Editors & Debuggers..." 5 70
     pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode
-    mark_done "c"
+    mark_done "d"
 }
 
 nasa_theme() { 
@@ -658,10 +678,10 @@ EOF
     sysrc -f /boot/loader.conf splash_txt_load="YES"
     sysrc -f /boot/loader.conf splash_pcx_load="YES"
     
-    mark_done "d"
+    mark_done "e"
 }
 
-switch_latest() { sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "e"; }
+switch_latest() { sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "f"; }
 
 # --- MAIN MENU ---
 
@@ -669,21 +689,22 @@ show_disclaimer
 
 while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
-        --menu "Select Installation Step (Use Up/Down or type the character):" 22 85 15 \
+        --menu "Select Installation Step (Use Up/Down or type the character):" 22 85 16 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Language, User)")" \
         "2" "$(get_label "2" "GPU: NVIDIA (Auto-Detect Legacy/Latest)")" \
         "3" "$(get_label "3" "GPU/VM: DRM-KMOD & VBox Guest Auto-Setup")" \
         "4" "$(get_label "4" "Desktop: Plasma 6 + KDE Tools")" \
         "5" "$(get_label "5" "Desktop: MATE")" \
         "6" "$(get_label "6" "Desktop: XFCE4")" \
-        "7" "$(get_label "7" "Samba Server (Interactive)")" \
+        "7" "$(get_label "7" "Basic Apps & Fonts (Web, Mail, VLC)")" \
         "8" "$(get_label "8" "Remote Access: XRDP (New Session) & x11vnc (Console)")" \
-        "9" "$(get_label "9" "VirtualBox 7.2 Host (Blocked in VM)")" \
-        "a" "$(get_label "a" "Basic Apps & Fonts (Web, Mail, VLC)")" \
-        "b" "$(get_label "b" "Multimedia Creation (GIMP, Blender, OBS...)")" \
-        "c" "$(get_label "c" "Dev Tools & Editors (GCC, Python, VSCode, GDB)")" \
-        "d" "$(get_label "d" "NASA Theme (SDDM & Boot)")" \
-        "e" "$(get_label "e" "Upgrade to LATEST Branch")" \
+        "9" "$(get_label "9" "WINE & Winetricks (Windows Apps - Needs LATEST)")" \
+        "a" "$(get_label "a" "Samba Server (Interactive)")" \
+        "b" "$(get_label "b" "VirtualBox 7.2 Host (Blocked in VM)")" \
+        "c" "$(get_label "c" "Multimedia Creation (GIMP, Blender, OBS...)")" \
+        "d" "$(get_label "d" "Dev Tools & Editors (GCC, Python, VSCode, GDB)")" \
+        "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
+        "f" "$(get_label "f" "Upgrade to LATEST Branch")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
@@ -693,14 +714,15 @@ while true; do
         4) plasma_config ;;
         5) mate_config ;;
         6) xfce_config ;;
-        7) samba_config ;;
+        7) apps_config ;;
         8) remote_access_config ;;
-        9) vbox_host_config ;;
-        a) apps_config ;;
-        b) multimedia_config ;;
-        c) development_config ;;
-        d) nasa_theme ;;
-        e) switch_latest ;;
+        9) wine_config ;;
+        a) samba_config ;;
+        b) vbox_host_config ;;
+        c) multimedia_config ;;
+        d) development_config ;;
+        e) nasa_theme ;;
+        f) switch_latest ;;
         q|*) break ;;
     esac
 done
