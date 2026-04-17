@@ -153,7 +153,7 @@ EOF
     esac
 
     # 3. Hardware Base
-    pkg install -y pulseaudio pipewire wireplumber audio/freedesktop-sound-theme xorg dbus avahi signal-cli seatd sddm cups gutenprint cups-filters hplip system-config-printer fusefs-ntfs fusefs-ext2 fusefs-hfsfuse
+    pkg install -y pulseaudio cups-pk-helper pipewire wireplumber audio/freedesktop-sound-theme xorg dbus avahi signal-cli seatd sddm cups gutenprint cups-filters hplip system-config-printer fusefs-ntfs fusefs-ext2 fusefs-hfsfuse
     sysrc sound_load="YES" snd_hda_load="YES"
     add_line_if_missing "hw.snd.default_unit=1" /etc/sysctl.conf
     sysrc dbus_enable=YES avahi_enable=YES seatd_enable=YES sddm_enable=YES
@@ -430,7 +430,7 @@ drm_config() {
 plasma_config() { 
     bsddialog --infobox "Installing Plasma 6 (KDE) and native tools..." 5 60
     pkg install -y --g "plasma6-*" "kf6*"
-    pkg install -y plasma6-plasma pavucontrol kate konsole ark remmina dolphin Kvantum octopkg print-manager cups-pk-helper
+    pkg install -y plasma6-plasma pavucontrol kate konsole ark remmina dolphin Kvantum octopkg print-manager
     mark_done "4"
 }
 
