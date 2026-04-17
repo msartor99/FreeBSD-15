@@ -4,7 +4,9 @@ Installing FreeBSD is simple, but configuring it for everyday use is a bit more 
 
 I consulted numerous websites, forums, and YouTube videos to find the optimal configuration.
 
-Here is the latest version of my installation guide.
+working with Gemini for best interactivity
+
+Here is the latest version of the installation script.
 
 FreeBSD_15_universal_post_install.sh
 
@@ -22,7 +24,7 @@ Enjoy!
 # New version
 ________________________________________________________________________________________
 
-here is a new version : FreeBSD_15_universal_post_install.sh
+here is a new version : FreeBSD_15_new_univ_post_install.sh
 
 .
 
