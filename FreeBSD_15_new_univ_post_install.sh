@@ -382,7 +382,6 @@ drm_config() {
             *Intel*) 
                 DRM_DRIVER="i915kms"
                 bsddialog --infobox "Intel GPU detected. Installing DRM, Firmware, VAAPI & Audio Routing..." 5 70
-                # Correction des noms de paquets stricts pour FreeBSD
                 pkg install -y drm-kmod gpu-firmware-kmod mixertui libva-intel-media-driver libva-intel-driver libva-utils
                 
                 # Chargement temporaire pour initialiser les sondes audio intégrées
@@ -428,7 +427,6 @@ plasma_config() {
 
 mate_config() { 
     bsddialog --infobox "Installing MATE Desktop..." 5 50
-    # Installation propre de MATE avec pavucontrol et outils supplémentaires
     pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs
     mark_done "5"
 }
@@ -451,14 +449,34 @@ EOF
 
 # --- REMOTE DESKTOP (XRDP & VNC) ---
 remote_access_config() { 
-    bsddialog --infobox "Installing XRDP (Virtual Sessions) and x11vnc (Physical Console)..." 5 70
-    pkg install -y xrdp xorgxrdp x11vnc
+    bsddialog --infobox "Installing XRDP, x11vnc, and Zenity (for Desktop Chooser)..." 5 70
+    pkg install -y xrdp xorgxrdp x11vnc zenity
     
-    # 1. XRDP Setup
+    # 1. XRDP Setup with GUI Chooser (Zenity)
     sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
     [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
-    echo 'export LANG=fr_FR.UTF-8' > /usr/local/etc/xrdp/startwm.sh
-    echo 'exec startplasma-x11' >> /usr/local/etc/xrdp/startwm.sh
+    
+    cat > /usr/local/etc/xrdp/startwm.sh << 'EOF'
+#!/bin/sh
+export LANG=fr_FR.UTF-8
+
+# Interface graphique pour choisir le bureau via RDP
+CHOICE=$(zenity --list --title="Session RDP - FreeBSD" \
+    --text="Choisissez votre environnement de bureau :" \
+    --radiolist --column="X" --column="Desktop Environment" \
+    TRUE "Plasma 6 (KDE)" FALSE "MATE Desktop" \
+    --width=350 --height=250 2>/dev/null)
+
+case "$CHOICE" in
+    "MATE Desktop")
+        exec mate-session
+        ;;
+    *)
+        # Par défaut (Plasma) si on clique sur OK sans changer ou si on ferme la fenêtre
+        exec startplasma-x11
+        ;;
+esac
+EOF
     chmod 555 /usr/local/etc/xrdp/startwm.sh
     
     # 2. VNC Console Setup (x11vnc)
@@ -468,7 +486,7 @@ remote_access_config() {
         chmod 600 /usr/local/etc/x11vnc.pwd
     fi
     
-    # Updated Service script for x11vnc with robust SDDM auth detection and delay to avoid boot race conditions
+    # Service script for x11vnc using daemon to run fully in the background with a delay
     cat > /usr/local/etc/rc.d/x11vnc << 'EOF'
 #!/bin/sh
 # REQUIRE: LOGIN dbus sddm
