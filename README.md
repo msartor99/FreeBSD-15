@@ -8,10 +8,8 @@ working with Gemini for best interactivity
 
 Here is the latest version of the installation script.
 
-FreeBSD_15_universal_post_install.sh
 
-
-Launch PuTTY to connect to an SSH session as root over the network.
+Launch PuTTY to connect to an SSH session over the network as root or your user and type su - to connect root.
 
 type:
 
@@ -25,10 +23,6 @@ Enjoy!
 ________________________________________________________________________________________
 
 here is a new version : FreeBSD_15_new_univ_post_install.sh
-
-fetch https://raw.githubusercontent.com/msartor99/FreeBSD15/refs/heads/main/FreeBSD_15_new_univ_post_install.sh
-
-sh FreeBSD_15_new_univ_post_install.sh
 
 some enhancement and adjustment.
 
