@@ -556,20 +556,32 @@ nasa_theme() {
 Current=nasa
 EOF
 
-    # --- Boot Menu & Splash (Clean Architecture) ---
+    # --- Boot Menu & Splash (Clean Symlink Architecture) ---
     mkdir -p /boot/images
     
-    # We copy them under custom names to never overwrite default FreeBSD system files
+    # 1. Copie des images avec leurs noms uniques (NASA)
     cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
     cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
     cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
     
-    # Tell the bootloader explicitly to use our new custom images
-    sysrc -f /boot/loader.conf loader_brand="/boot/images/nasa-brand.png"
-    sysrc -f /boot/loader.conf loader_logo="/boot/images/nasa-logo.png"
-    sysrc -f /boot/loader.conf loader_color="YES"
+    # 2. Nettoyage des anciennes variables problématiques (Sécurité idempotente)
+    sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
+    sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
     
-    # Leave the splash screen configuration exactly as is
+    # 3. Sauvegarde des images FreeBSD par défaut (si elles existent et ne sont pas déjà des liens)
+    if [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ]; then
+        mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
+    fi
+    if [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ]; then
+        mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
+    fi
+    
+    # 4. Création des liens symboliques pour tromper le bootloader
+    ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
+    ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
+    
+    # 5. Configuration du Splash screen (On ne touche à rien, ça marche !)
+    sysrc -f /boot/loader.conf loader_color="YES"
     sysrc -f /boot/loader.conf splash="/boot/images/splash.png"
     sysrc -f /boot/loader.conf splash_bmp_load="YES"
     sysrc -f /boot/loader.conf splash_txt_load="YES"
@@ -577,14 +589,6 @@ EOF
     
     mark_done "e"
 }
-
-switch_latest() { 
-    local msg="WARNING: Switching to LATEST branch can lead to temporary package breakage or GUI instability. Proceed?"
-    if bsddialog --title "DANGER: LATEST Branch" --defaultno --yesno "$msg" 10 70; then
-        sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "f"
-    fi
-}
-
 # --- MAIN MENU ---
 
 show_disclaimer
