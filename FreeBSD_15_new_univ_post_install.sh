@@ -70,8 +70,19 @@ initial_setup() {
         pkg install -y sudo
     fi
     
-    pkg install -y doas unzip libzip wget git linux-rl9 htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
+    # Install standard tools EXCEPT linux-rl9
+    pkg install -y doas unzip libzip wget git htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
 
+    # Linux Compat Initialization BEFORE installing linux-rl9
+    sysrc linux_enable=YES
+    kldload linux 2>/dev/null
+    kldload linux64 2>/dev/null
+    service linux start 2>/dev/null
+    
+    # Now install linux-rl9 safely with ABI loaded
+    pkg install -y linux-rl9
+
+    # SSH Configuration
     sed -i '' 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     add_line_if_missing "PermitRootLogin yes" /etc/ssh/sshd_config
     service sshd restart
@@ -87,11 +98,8 @@ initial_setup() {
     add_line_if_missing "kern.ipc.shm_allow_removed=1" /etc/sysctl.conf
     sysctl net.local.stream.recvspace=65536 net.local.stream.sendspace=65536
     sysrc -f /boot/loader.conf tmpfs_load=YES aio_load=YES nvme_load=YES
-    
-    # Linux Compat & Services
-    sysrc linux_enable=YES linux64_enable=YES
-    service linux restart 2>/dev/null || service linux start
 
+    # SMART monitoring
     sysrc smartd_enable=YES
     [ ! -f /usr/local/etc/smartd.conf ] && cp /usr/local/etc/smartd.conf.sample /usr/local/etc/smartd.conf
     service smartd restart 2>/dev/null || service smartd start
