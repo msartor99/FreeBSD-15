@@ -160,7 +160,7 @@ EOF
             ;;
     esac
 
-    # 3. Hardware Base (Added cups-pk-helper for all desktops)
+    # 3. Hardware Base (X11 only)
     pkg install -y pulseaudio pipewire wireplumber audio/freedesktop-sound-theme xorg dbus avahi signal-cli seatd sddm cups gutenprint cups-filters hplip system-config-printer cups-pk-helper fusefs-ntfs fusefs-ext2 fusefs-hfsfuse
     sysrc sound_load="YES" snd_hda_load="YES"
     add_line_if_missing "hw.snd.default_unit=1" /etc/sysctl.conf
@@ -383,12 +383,6 @@ drm_config() {
         esac
     fi
     
-    if pciconf -lv | grep -iq "NVIDIA" || [ -f "${DB_PREFIX}2" ]; then
-        bsddialog --infobox "NVIDIA detected. Skipping Wayland to prevent conflicts." 5 60
-    else
-        pkg install -y wayland xwayland
-    fi
-    
     ! sysrc -n kld_list | grep -q "$DRM_DRIVER" && sysrc kld_list+="$DRM_DRIVER"
     set_monitor_resolution
     mark_done "3"
@@ -413,6 +407,7 @@ mate_config() {
 xfce_config() {
     bsddialog --infobox "Installing XFCE4 Desktop..." 5 50
     pkg install -y xfce xfce4-goodies octopkg pavucontrol remmina xdg-user-dirs
+    # Hidden wayland sessions just in case dependencies pull them in
     rm -f /usr/local/share/wayland-sessions/xfce*.desktop 2>/dev/null
     mkdir -p /usr/local/share/xsessions
     cat > /usr/local/share/xsessions/xfce.desktop <<EOF
