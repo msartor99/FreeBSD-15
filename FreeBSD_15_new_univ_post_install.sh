@@ -576,10 +576,21 @@ macbook_2010_config() {
     ! sysrc -n kld_list | grep -q "firewire" && sysrc kld_list+="firewire"
 
     # 5. Warnings for GPU, Audio & Keyboard
-    local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Do NOT use the NVIDIA Option (2)! Use Option 3 (DRM-KMOD) for the safe 'nouveau' driver.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'."
-    bsddialog --msgbox "$warn_msg" 16 75
+    local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Do NOT use the NVIDIA Option (2)! Use Option 3 (DRM-KMOD) for the safe 'nouveau' driver.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'.\n\n4. WI-FI: Once you reboot, use Option 'w' in this script to configure your Wi-Fi connection."
+    bsddialog --msgbox "$warn_msg" 18 75
 
     mark_done "h"
+}
+
+wifi_config() {
+    # Calls the native FreeBSD installer utility for networking
+    clear
+    if [ -x /usr/libexec/bsdinstall/netconfig ]; then
+        bsdinstall netconfig
+        mark_done "w"
+    else
+        bsddialog --msgbox "Error: The bsdinstall network utility was not found on this system." 6 70
+    fi
 }
 
 vbox_host_config() {
@@ -636,7 +647,7 @@ show_disclaimer
 
 while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
-        --menu "Select Installation Step:" 23 85 17 \
+        --menu "Select Installation Step:" 24 85 18 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Lang, User)")" \
         "2" "$(get_label "2" "GPU: NVIDIA (Auto-Legacy/Latest)")" \
         "3" "$(get_label "3" "GPU/VM: DRM-KMOD & VBox Guest Auto")" \
@@ -652,6 +663,7 @@ while true; do
         "d" "$(get_label "d" "Dev Tools (GCC, Python, VSCode)")" \
         "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
         "h" "$(get_label "h" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
+        "w" "$(get_label "w" "Wi-Fi Configuration (Native bsdinstall GUI)")" \
         "g" "$(get_label "g" "Bluetooth Support (WARNING)")" \
         "f" "$(get_label "f" "Upgrade to LATEST Branch (WARNING)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
@@ -659,7 +671,7 @@ while true; do
     case $MAIN_CHOICE in
         1) initial_setup ;; 2) nvidia_config ;; 3) drm_config ;; 4) plasma_config ;; 5) mate_config ;; 6) xfce_config ;;
         7) apps_config ;; 8) remote_access_config ;; 9) wine_config ;; a) samba_config ;; b) vbox_host_config ;;
-        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; h) macbook_2010_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
+        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; h) macbook_2010_config ;; w) wifi_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
     esac
 done
 clear
