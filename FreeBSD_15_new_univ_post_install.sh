@@ -447,7 +447,7 @@ macos_xfce_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for XFCE4...\n(This might take a moment to fetch from GitHub)" 6 65
     
     # 1. Install dependencies AND GNU core utilities for Linux script compatibility
-    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed
+    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed plank
     
     # 2. The UNIX Trick: Wrap GNU tools and fake 'setterm' to fool the Linux script
     mkdir -p /tmp/gnu_wrap
@@ -471,6 +471,10 @@ macos_xfce_theme() {
     mkdir -p /usr/local/share/themes
     bash ./install.sh -d /usr/local/share/themes -t all -N glassy
     
+    # Copy the Plank theme specifically for all users
+    mkdir -p /usr/local/share/plank/themes
+    cp -r src/other/plank/theme-* /usr/local/share/plank/themes/ 2>/dev/null
+    
     # 5. Clone and install the Icon Theme globally
     git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
     cd /tmp/WhiteSur-icon-theme
@@ -485,12 +489,39 @@ macos_xfce_theme() {
     rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
     export PATH=$OLD_PATH
     
-    local msg="WhiteSur Theme installed globally!\n\nTo apply it, log into your XFCE session and go to:\n\n1. Settings > Appearance > Style: Choose 'WhiteSur-Light' (or Dark)\n2. Settings > Appearance > Icons: Choose 'WhiteSur'\n3. Window Manager > Style: Choose 'WhiteSur'\n\nTip: Add a second panel at the bottom of the screen to act as a Mac Dock!"
-    bsddialog --msgbox "$msg" 16 75
+    # 8. Autostart Plank Dock for all XFCE users
+    mkdir -p /usr/local/etc/xdg/autostart
+    cat > /usr/local/etc/xdg/autostart/plank.desktop <<EOF
+[Desktop Entry]
+Name=Plank
+Comment=Stupidly simple dock
+Exec=plank
+Icon=plank
+Terminal=false
+Type=Application
+Categories=Utility;
+OnlyShowIn=XFCE;
+EOF
+
+    # 9. Surgically remove the default XFCE bottom panel (Panel 2) from system defaults
+    if [ -f /usr/local/etc/xdg/xfce4/panel/default.xml ]; then
+        sed -i '' '/<value type="int" value="2"\/>/d' /usr/local/etc/xdg/xfce4/panel/default.xml
+    fi
+    # Also patch existing user profiles just in case
+    for user_home in /home/* /root; do
+        panel_xml="$user_home/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml"
+        if [ -f "$panel_xml" ]; then
+            sed -i '' '/<value type="int" value="2"\/>/d' "$panel_xml"
+        fi
+    done
+    
+    local msg="WhiteSur Theme & Plank Dock installed!\n\nTo apply it, log into XFCE and go to:\n\n1. Settings > Appearance > Style: 'WhiteSur'\n2. Settings > Appearance > Icons: 'WhiteSur'\n3. Window Manager > Style: 'WhiteSur'\n4. Press Ctrl+RightClick on the new Dock at the bottom, select Preferences, and change its theme to WhiteSur!\n\n(The script automatically removed the default bottom panel for future logins)."
+    bsddialog --msgbox "$msg" 18 75
 }
+
 xfce_config() {
     bsddialog --infobox "Installing XFCE4 Desktop..." 5 50
-    pkg install -y xfce xfce4-goodies octopkg pavucontrol remmina xdg-user-dirs
+    pkg install -y xfce xfce4-goodies octopkg pavucontrol remmina xdg-user-dirs xarchiver plank
     mkdir -p /usr/local/share/xsessions
     cat > /usr/local/share/xsessions/xfce.desktop <<EOF
 [Desktop Entry]
@@ -501,7 +532,7 @@ Type=Application
 DesktopNames=XFCE
 EOF
     
-    local theme_msg="Do you want to install the WhiteSur macOS Theme for XFCE4?\n\n(This will download and prepare a beautiful Mac-like look for your desktop)"
+    local theme_msg="Do you want to install the WhiteSur macOS Theme for XFCE4?\n\n(This will download the theme, icons, and configure the Plank Mac Dock for your desktop)"
     if bsddialog --title "XFCE4 macOS Theme" --yesno "$theme_msg" 8 65; then
         macos_xfce_theme
     fi
