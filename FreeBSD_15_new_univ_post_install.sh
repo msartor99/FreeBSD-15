@@ -114,13 +114,10 @@ initial_setup() {
             pkg install -y cpu-microcode sensors
             sysrc -f /boot/loader.conf coretemp_load="YES"
             sysrc -f /boot/loader.conf cpu_microcode_name="/boot/firmware/intel-ucode.bin"
-            
-            # Specific Workstation Power & Monitoring modules for Intel
             sysrc -f /boot/loader.conf ipmi_load="YES"
             sysrc -f /boot/loader.conf intsmb_load="YES"
             sysrc -f /boot/loader.conf ichsmb_load="YES"
             
-            # Devfs rules for NVMe AND IPMI sensors
             if ! grep -q "localrules" /etc/devfs.rules 2>/dev/null; then
                 cat >> /etc/devfs.rules <<EOF
 [localrules=10]
@@ -139,12 +136,9 @@ EOF
             sysrc -f /boot/loader.conf amdtemp_load="YES"
             sysrc -f /boot/loader.conf cpu_microcode_load="YES"
             sysrc -f /boot/loader.conf cpu_microcode_name="/boot/firmware/amd-ucode.bin"
-            
-            # Specific Workstation/P620 Power & Monitoring modules
             sysrc -f /boot/loader.conf ipmi_load="YES"
             sysrc -f /boot/loader.conf amdsmb_load="YES"
             
-            # Devfs rules for NVMe AND IPMI sensors
             if ! grep -q "localrules" /etc/devfs.rules 2>/dev/null; then
                 cat >> /etc/devfs.rules <<EOF
 [localrules=10]
@@ -291,7 +285,6 @@ EOF
     esac
 
     # --- KDE PLASMA 6 GLOBAL KEYBOARD INJECTION ---
-    # This forces Plasma to inherit the chosen layout instead of defaulting to US English
     mkdir -p /usr/local/etc/xdg
     cat > /usr/local/etc/xdg/kxkbrc <<EOF
 [Layout]
@@ -420,7 +413,6 @@ drm_config() {
 plasma_config() { 
     bsddialog --infobox "Installing Plasma 6 (KDE) + Printers + KWallet..." 5 65
     pkg install -y --g "plasma6-*" "kf6*"
-    # Added plasma6-print-manager for GUI printers and kwalletmanager for Chromium stability
     pkg install -y pavucontrol kate konsole ark remmina dolphin Kvantum octopkg plasma6-print-manager kwalletmanager
     mark_done "4"
 }
@@ -452,7 +444,6 @@ apps_config() {
     bsddialog --infobox "Installing Apps & Configuring Webcam..." 5 60
     pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
     
-    # Vital Webcam Configuration
     sysrc webcamd_enable="YES"
     ! sysrc -n kld_list | grep -q "cuse" && sysrc kld_list+="cuse"
     [ -n "$USER_NAME" ] && pw groupmod webcamd -m "$USER_NAME" 2>/dev/null
@@ -538,6 +529,20 @@ EOF
     mark_done "a"
 }
 
+bluetooth_config() {
+    local msg="Warning: Bluetooth is not fully integrated in FreeBSD, are you sure?"
+    if ! bsddialog --title "Bluetooth Warning" --defaultno --yesno "$msg" 8 60; then
+        return
+    fi
+
+    bsddialog --infobox "Configuring Bluetooth & Audio bridge..." 5 60
+    pkg install -y virtual_oss blueman
+    ! sysrc -n kld_list | grep -q "ng_ubt" && sysrc kld_list+="ng_ubt"
+    sysrc hcsecd_enable="YES" bthidd_enable="YES" sdpd_enable="YES"
+    [ -n "$USER_NAME" ] && pw groupmod network -m "$USER_NAME" 2>/dev/null
+    mark_done "g"
+}
+
 vbox_host_config() {
     is_vbox_guest && return
     pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
@@ -546,7 +551,7 @@ vbox_host_config() {
 }
 
 multimedia_config() {
-    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity audacity ffmpeg gstreamer1-plugins-all; mark_done "c"
+    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ffmpeg gstreamer1-plugins-all; mark_done "c"
 }
 
 development_config() {
@@ -555,63 +560,27 @@ development_config() {
 
 nasa_theme() { 
     bsddialog --infobox "Downloading and configuring NASA Theme..." 5 60
-    
     [ -d /tmp/fb14_assets ] && rm -rf /tmp/fb14_assets
-    [ -f /tmp/fb14_assets.zip ] && rm -f /tmp/fb14_assets.zip
-    
     fetch -o /tmp/fb14_assets.zip https://github.com/msartor99/FreeBSD14/archive/refs/heads/main.zip
-    unzip -q /tmp/fb14_assets.zip -d /tmp/
-    mv /tmp/FreeBSD14-main /tmp/fb14_assets
-    rm -f /tmp/fb14_assets.zip
-    
-    # --- SDDM Theme ---
+    unzip -q /tmp/fb14_assets.zip -d /tmp/; mv /tmp/FreeBSD14-main /tmp/fb14_assets
     mkdir -p /usr/local/share/sddm/themes/nasa
     cp -r /usr/local/share/sddm/themes/maldives/* /usr/local/share/sddm/themes/nasa/ 2>/dev/null
     cp -f /tmp/fb14_assets/Main.qml /usr/local/share/sddm/themes/nasa/
     cp -f /tmp/fb14_assets/metadata.desktop /usr/local/share/sddm/themes/nasa/
     cp -f /tmp/fb14_assets/nasa2560login.jpg /usr/local/share/sddm/themes/nasa/background.jpg
-    
-    if [ -f /usr/local/share/sddm/themes/nasa/theme.conf ]; then
-        sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
-    fi
-
-    mkdir -p /usr/local/etc/sddm.conf.d
-    cat > /usr/local/etc/sddm.conf.d/theme.conf <<EOF
-[Theme]
-Current=nasa
-EOF
-
-    # --- Boot Menu & Splash (Clean Symlink Architecture) ---
+    [ -f /usr/local/share/sddm/themes/nasa/theme.conf ] && sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
+    mkdir -p /usr/local/etc/sddm.conf.d; echo "[Theme]\nCurrent=nasa" > /usr/local/etc/sddm.conf.d/theme.conf
     mkdir -p /boot/images
-    
-    # 1. Copie des images avec leurs noms uniques (NASA)
     cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
     cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
     cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
-    
-    # 2. Nettoyage des anciennes variables problématiques
     sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
     sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
-    
-    # 3. Sauvegarde des images FreeBSD par défaut (si elles existent et ne sont pas déjà des liens)
-    if [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ]; then
-        mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
-    fi
-    if [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ]; then
-        mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
-    fi
-    
-    # 4. Création des liens symboliques pour tromper le bootloader
+    [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ] && mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
+    [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ] && mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
     ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
     ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
-    
-    # 5. Configuration du Splash screen
-    sysrc -f /boot/loader.conf loader_color="YES"
-    sysrc -f /boot/loader.conf splash="/boot/images/splash.png"
-    sysrc -f /boot/loader.conf splash_bmp_load="YES"
-    sysrc -f /boot/loader.conf splash_txt_load="YES"
-    sysrc -f /boot/loader.conf splash_pcx_load="YES"
-    
+    sysrc -f /boot/loader.conf loader_color="YES" splash="/boot/images/splash.png" splash_bmp_load="YES" splash_txt_load="YES" splash_pcx_load="YES"
     mark_done "e"
 }
 
@@ -643,13 +612,14 @@ while true; do
         "c" "$(get_label "c" "Multimedia Creation (GIMP, OBS...)")" \
         "d" "$(get_label "d" "Dev Tools (GCC, Python, VSCode)")" \
         "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
+        "g" "$(get_label "g" "Bluetooth Support (WARNING)")" \
         "f" "$(get_label "f" "Upgrade to LATEST Branch (WARNING)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
         1) initial_setup ;; 2) nvidia_config ;; 3) drm_config ;; 4) plasma_config ;; 5) mate_config ;; 6) xfce_config ;;
         7) apps_config ;; 8) remote_access_config ;; 9) wine_config ;; a) samba_config ;; b) vbox_host_config ;;
-        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; f) switch_latest ;; q|*) break ;;
+        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
     esac
 done
 clear
