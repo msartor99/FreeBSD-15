@@ -61,36 +61,28 @@ Do you accept these conditions to continue?"
 initial_setup() {
     bsddialog --infobox "Starting System, Hardware Monitoring & Base Setup..." 5 60
     
-    # 1. Base System & Vital Packages
     pkg update -y
     
-    # Explicit Sudo verification
     if ! command -v sudo >/dev/null 2>&1; then
         bsddialog --infobox "Installing sudo..." 5 40
         pkg install -y sudo
     fi
     
-    # Install standard tools EXCEPT linux-rl9
-    pkg install -y doas unzip libzip wget git htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
+    pkg install -y bash doas unzip libzip wget git htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
 
-    # Linux Compat Initialization BEFORE installing linux-rl9
     sysrc linux_enable=YES
     kldload linux 2>/dev/null
     kldload linux64 2>/dev/null
     service linux start 2>/dev/null
     
-    # Now install linux-rl9 safely with ABI loaded
     pkg install -y linux-rl9
 
-    # SSH Configuration
     sed -i '' 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     add_line_if_missing "PermitRootLogin yes" /etc/ssh/sshd_config
     service sshd restart
     
-    # Bypass the pager to avoid script pausing during updates
     PAGER=cat freebsd-update fetch install
 
-    # Boot & Kernel Tuning
     sysrc -f /boot/loader.conf boot_mute=YES splash_changer_enable=YES autoboot_delay=3
     sed -i '' 's/run_rc_script ${_rc_elem} ${_boot}/run_rc_script ${_rc_elem} ${_boot} > \/dev\/null/g' /etc/rc
     sysrc rc_startmsgs=NO
@@ -99,12 +91,10 @@ initial_setup() {
     sysctl net.local.stream.recvspace=65536 net.local.stream.sendspace=65536
     sysrc -f /boot/loader.conf tmpfs_load=YES aio_load=YES nvme_load=YES
 
-    # SMART monitoring
     sysrc smartd_enable=YES
     [ ! -f /usr/local/etc/smartd.conf ] && cp /usr/local/etc/smartd.conf.sample /usr/local/etc/smartd.conf
     service smartd restart 2>/dev/null || service smartd start
 
-    # 2. CPU Management & Power/Sensor Configuration
     CPU_TYPE=$(bsddialog --menu "Select CPU Type & Energy Management:" 13 85 2 \
         "Intel" "Intel CPU Firmware, Coretemp, IPMI & SMBus (I5 /I7 /I9 /Xeon )" \
         "AMD" "AMD CPU Firmware, AMDtemp, IPMI & SMBus (AMD Ryzen )" 3>&1 1>&2 2>&3)
@@ -154,7 +144,6 @@ EOF
             ;;
     esac
 
-    # 3. Hardware Base (X11 only)
     pkg install -y pulseaudio pipewire wireplumber audio/freedesktop-sound-theme xorg dbus avahi signal-cli seatd sddm cups gutenprint cups-filters hplip system-config-printer cups-pk-helper fusefs-ntfs fusefs-ext2 fusefs-hfsfuse
     sysrc sound_load="YES" snd_hda_load="YES"
     add_line_if_missing "hw.snd.default_unit=1" /etc/sysctl.conf
@@ -165,7 +154,6 @@ EOF
     add_line_if_missing "proc /proc procfs rw 0 0" /etc/fstab
     add_line_if_missing "fdesc /dev/fd fdescfs rw 0 0" /etc/fstab
 
-    # 4. Localization & Keyboard Menu
     clean_locales() {
         if [ -f /etc/login.conf ]; then
             sed -i '' '/french|French Users Accounts:/,/:tc=default:/d' /etc/login.conf
@@ -196,14 +184,11 @@ EOF
             sysrc sddm_lang="en_US"
             KBD_LAYOUT="us"
             [ "$IS_MAC" = "YES" ] && KBD_VARIANT="mac" || KBD_VARIANT=""
-            
             [ -n "$KBD_VARIANT" ] && VAR_STR="Option \"XkbVariant\" \"$KBD_VARIANT\"" || VAR_STR=""
-            
             cat >/usr/local/etc/X11/xorg.conf.d/20-keyboards.conf <<EOF
 Section "ServerFlags"
     Option "DontZap" "false"
 EndSection
-
 Section "InputClass"
     Identifier "All Keyboards"
     MatchIsKeyboard "yes"
@@ -231,12 +216,10 @@ EOF
             sysrc sddm_lang="fr_CH"
             KBD_LAYOUT="ch"
             [ "$IS_MAC" = "YES" ] && KBD_VARIANT="fr-mac" || KBD_VARIANT="fr"
-
             cat >/usr/local/etc/X11/xorg.conf.d/20-keyboards.conf <<EOF
 Section "ServerFlags"
     Option "DontZap" "false"
 EndSection
-
 Section "InputClass"
     Identifier "All Keyboards"
     MatchIsKeyboard "yes"
@@ -250,11 +233,9 @@ EOF
             CUSTOM_LANG=$(bsddialog --inputbox "Enter System Locale (e.g., de_DE.UTF-8, es_ES.UTF-8):" 9 55 "en_US.UTF-8" 3>&1 1>&2 2>&3)
             CUSTOM_KBD=$(bsddialog --inputbox "Enter Keyboard Layout Code (e.g., de, es, gb, fr):" 9 55 "us" 3>&1 1>&2 2>&3)
             CUSTOM_VAR=$(bsddialog --inputbox "Enter Keyboard Variant (leave empty if none):" 9 55 "" 3>&1 1>&2 2>&3)
-            
             [ -z "$CUSTOM_LANG" ] && CUSTOM_LANG="en_US.UTF-8"
             [ -z "$CUSTOM_KBD" ] && CUSTOM_KBD="us"
             [ -z "$CUSTOM_VAR" ] && [ "$IS_MAC" = "YES" ] && CUSTOM_VAR="mac"
-
             cat >> /etc/login.conf <<EOF
 
 custom_locale|Custom Users Accounts:\\
@@ -269,20 +250,15 @@ EOF
             cap_mkdb /etc/login.conf
             echo 'defaultclass=custom_locale' > /etc/adduser.conf
             USER_CLASS="custom_locale"
-            
             SDDM_L=$(echo "$CUSTOM_LANG" | cut -d'.' -f1)
             sysrc sddm_lang="$SDDM_L"
-            
             KBD_LAYOUT="$CUSTOM_KBD"
             KBD_VARIANT="$CUSTOM_VAR"
-
             [ -n "$CUSTOM_VAR" ] && VAR_STR="Option \"XkbVariant\" \"$CUSTOM_VAR\"" || VAR_STR=""
-
             cat >/usr/local/etc/X11/xorg.conf.d/20-keyboards.conf <<EOF
 Section "ServerFlags"
     Option "DontZap" "false"
 EndSection
-
 Section "InputClass"
     Identifier "All Keyboards"
     MatchIsKeyboard "yes"
@@ -294,7 +270,6 @@ EOF
             ;;
     esac
 
-    # --- KDE PLASMA 6 GLOBAL KEYBOARD INJECTION ---
     mkdir -p /usr/local/etc/xdg
     cat > /usr/local/etc/xdg/kxkbrc <<EOF
 [Layout]
@@ -312,7 +287,6 @@ Use=true
 VariantList=${KBD_VARIANT}
 EOF
 
-    # User creation
     USER_NAME=$(bsddialog --inputbox "User Configuration:\nEnter main user name:" 9 50 3>&1 1>&2 2>&3)
     if [ -n "$USER_NAME" ]; then
         export USER_NAME
@@ -322,7 +296,6 @@ EOF
     mark_done "1"
 }
 
-# --- RESOLUTION SETTING FUNCTION ---
 set_monitor_resolution() {
     RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:" 17 75 6 \
         "Native" "Maximum Monitor Capability (Default)" \
@@ -359,63 +332,100 @@ EOF
     fi
 }
 
-# --- GPU CONFIGURATIONS ---
-
-nvidia_config() {
-    GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | grep -o '\[.*\]' | tr -d '[]')
+# --- UNIFIED SMART GPU CONFIGURATION ---
+install_nvidia_interactive() {
+    local IS_HYBRID="$1"
+    local GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | grep -o '\[.*\]' | tr -d '[]')
     [ -z "$GPU_INFO" ] && GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | cut -d "'" -f 2)
     [ -z "$GPU_INFO" ] && GPU_INFO="Unknown Nvidia GPU"
     
-    REC_DRIVER="nvidia-driver"
+    local REC_DRIVER="nvidia-driver"
     if echo "$GPU_INFO" | grep -iqE "Quadro P|GTX 10|Pascal"; then REC_DRIVER="nvidia-driver-580"
     elif echo "$GPU_INFO" | grep -iqE "Quadro M|GTX 9|Maxwell"; then REC_DRIVER="nvidia-driver-470"
     elif echo "$GPU_INFO" | grep -iqE "Quadro K|GTX 7|Kepler"; then REC_DRIVER="nvidia-driver-390"; fi
 
-    CHOICE=$(bsddialog --title "Nvidia Config" --menu "Detected: $GPU_INFO\nRecommended: $REC_DRIVER" 17 85 5 \
+    local CHOICE=$(bsddialog --title "NVIDIA Configuration" --menu "Detected: $GPU_INFO\nRecommended: $REC_DRIVER" 17 85 5 \
         "nvidia-driver" "Latest" "nvidia-driver-580" "Legacy 580" "nvidia-driver-470" "Legacy 470" "nvidia-driver-390" "Legacy 390" "Back" "Cancel" 3>&1 1>&2 2>&3)
-    [ "$CHOICE" = "Back" ] || [ -z "$CHOICE" ] && return
-    DRIVER_PKG="$CHOICE"
-    [ "$DRIVER_PKG" = "nvidia-driver" ] && LINUX_LIBS="linux-nvidia-libs" || LINUX_LIBS="linux-nvidia-libs-$(echo $DRIVER_PKG | cut -d'-' -f3)"
+    [ "$CHOICE" = "Back" ] || [ -z "$CHOICE" ] && return 0
+    
+    local DRIVER_PKG="$CHOICE"
+    local LINUX_LIBS="linux-nvidia-libs"
+    [ "$DRIVER_PKG" != "nvidia-driver" ] && LINUX_LIBS="linux-nvidia-libs-$(echo $DRIVER_PKG | cut -d'-' -f3)"
+    
     pkg install -y "$DRIVER_PKG" "$LINUX_LIBS" libc6-shim nvidia-settings nvidia-xconfig
     sysrc kld_list+="nvidia-modeset"
     add_line_if_missing "hw.nvidiadrm.modeset=\"1\"" /boot/loader.conf
-    nvidia-xconfig
-    set_monitor_resolution
-    mark_done "2"
+    
+    if [ "$IS_HYBRID" != "YES" ]; then
+        nvidia-xconfig
+    fi
 }
 
-drm_config() {
-    VGA_VENDOR=$(pciconf -lv | grep -i -A 2 "vgapci" | grep "vendor" | cut -d "'" -f 2)
-    VGA_DEVICE=$(pciconf -lv | grep -i -A 2 "vgapci" | grep "device" | cut -d "'" -f 2)
-    DRM_DRIVER=""
+gpu_config() {
+    bsddialog --infobox "Analyzing PCI buses for Graphics Cards..." 4 50
+    local VGA_LINES=$(pciconf -lv | grep -i -A 2 "vgapci" | grep "vendor")
+    local HAS_INTEL="NO"
+    local HAS_AMD="NO"
+    local HAS_NVIDIA="NO"
     
+    echo "$VGA_LINES" | grep -iq "Intel" && HAS_INTEL="YES"
+    echo "$VGA_LINES" | grep -iqE "AMD|ATI" && HAS_AMD="YES"
+    echo "$VGA_LINES" | grep -iq "NVIDIA" && HAS_NVIDIA="YES"
+
     if is_vbox_guest; then
-        pkg install -y virtualbox-ose-additions; sysrc vboxguest_enable="YES"; sysrc vboxservice_enable="YES"
-        add_line_if_missing "vboxvideo_load=\"YES\"" /boot/loader.conf; DRM_DRIVER="vboxvideo"
-    else
-        case "$VGA_VENDOR" in
-            *Intel*) 
-                DRM_DRIVER="i915kms"
-                pkg install -y drm-kmod gpu-firmware-kmod mixertui libva-intel-media-driver libva-intel-driver libva-utils
-                kldload i915kms 2>/dev/null
-                sleep 2
-                DP_PCM=$(cat /dev/sndstat 2>/dev/null | grep -iE 'hdmi|dp' | grep -o 'pcm[0-9]*' | sed 's/pcm//' | head -n 1)
-                if [ -n "$DP_PCM" ]; then
-                    sed -i '' '/hw.snd.default_unit/d' /etc/sysctl.conf
-                    echo "hw.snd.default_unit=$DP_PCM" >> /etc/sysctl.conf
-                fi
-                ;;
-            *AMD*|*ATI*) 
-                if echo "$VGA_DEVICE" | grep -iqE "Radeon HD|Radeon R[579]|FirePro"; then DRM_DRIVER="radeonkms"; else DRM_DRIVER="amdgpu"; fi 
-                pkg install -y drm-kmod gpu-firmware-kmod
-                ;;
-            *) bsddialog --msgbox "No supported GPU detected." 8 50; return ;;
-        esac
+        bsddialog --msgbox "VirtualBox detected. Installing guest additions." 6 50
+        pkg install -y virtualbox-ose-additions; sysrc vboxguest_enable="YES" vboxservice_enable="YES"
+        add_line_if_missing "vboxvideo_load=\"YES\"" /boot/loader.conf
+        set_monitor_resolution
+        mark_done "2"
+        return
     fi
-    
-    ! sysrc -n kld_list | grep -q "$DRM_DRIVER" && sysrc kld_list+="$DRM_DRIVER"
+
+    if [ "$HAS_INTEL" = "YES" ] && [ "$HAS_NVIDIA" = "YES" ]; then
+        local msg="OPTIMUS HYBRID GRAPHICS DETECTED (Intel + NVIDIA)\n\nFreeBSD will use Intel as the primary display (for stability and battery) and install NVIDIA for PRIME Render Offloading.\n\nWe will install both drivers safely."
+        bsddialog --msgbox "$msg" 12 70
+        pkg install -y drm-kmod gpu-firmware-kmod mixertui libva-intel-media-driver libva-intel-driver libva-utils
+        sysrc kld_list+="i915kms"
+        install_nvidia_interactive "YES"
+        
+        local prime_msg="OPTIMUS CONFIGURED SAFELY!\n\nYour screen runs on Intel.\nTo run a specific app (e.g. blender) on the NVIDIA GPU, launch it via terminal like this:\n\n__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia blender"
+        bsddialog --msgbox "$prime_msg" 12 70
+
+    elif [ "$HAS_INTEL" = "YES" ] && [ "$HAS_AMD" = "YES" ]; then
+        bsddialog --msgbox "HYBRID GRAPHICS DETECTED (Intel + AMD)\n\nInstalling drm-kmod. Intel will be the primary display." 10 70
+        pkg install -y drm-kmod gpu-firmware-kmod libva-intel-media-driver libva-intel-driver libva-utils
+        sysrc kld_list+="i915kms amdgpu"
+        
+    elif [ "$HAS_INTEL" = "YES" ]; then
+        bsddialog --infobox "Intel Graphics detected. Installing i915kms..." 4 50
+        pkg install -y drm-kmod gpu-firmware-kmod mixertui libva-intel-media-driver libva-intel-driver libva-utils
+        sysrc kld_list+="i915kms"
+        kldload i915kms 2>/dev/null; sleep 2
+        local DP_PCM=$(cat /dev/sndstat 2>/dev/null | grep -iE 'hdmi|dp' | grep -o 'pcm[0-9]*' | sed 's/pcm//' | head -n 1)
+        if [ -n "$DP_PCM" ]; then
+            sed -i '' '/hw.snd.default_unit/d' /etc/sysctl.conf
+            echo "hw.snd.default_unit=$DP_PCM" >> /etc/sysctl.conf
+        fi
+
+    elif [ "$HAS_AMD" = "YES" ]; then
+        bsddialog --infobox "AMD Graphics detected. Installing drm-kmod..." 4 50
+        pkg install -y drm-kmod gpu-firmware-kmod
+        local VGA_DEVICE=$(pciconf -lv | grep -i -A 2 "vgapci" | grep "device" | cut -d "'" -f 2)
+        if echo "$VGA_DEVICE" | grep -iqE "Radeon HD|Radeon R[579]|FirePro"; then 
+            sysrc kld_list+="radeonkms"
+        else 
+            sysrc kld_list+="amdgpu"
+        fi 
+
+    elif [ "$HAS_NVIDIA" = "YES" ]; then
+        bsddialog --infobox "NVIDIA Dedicated Graphics detected..." 4 50
+        install_nvidia_interactive "NO"
+    else
+        bsddialog --msgbox "No recognized GPU detected. Falling back to default VESA/SCFB." 6 60
+    fi
+
     set_monitor_resolution
-    mark_done "3"
+    mark_done "2"
 }
 
 # --- DESKTOP ENVIRONMENTS ---
@@ -424,13 +434,30 @@ plasma_config() {
     bsddialog --infobox "Installing Plasma 6 (KDE) + Printers + KWallet..." 5 65
     pkg install -y --g "plasma6-*" "kf6*"
     pkg install -y pavucontrol kate konsole ark remmina dolphin Kvantum octopkg plasma6-print-manager kwalletmanager
-    mark_done "4"
+    mark_done "3"
 }
 
 mate_config() { 
     bsddialog --infobox "Installing MATE Desktop..." 5 50
     pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs
-    mark_done "5"
+    mark_done "4"
+}
+
+macos_xfce_theme() {
+    bsddialog --infobox "Downloading and building WhiteSur macOS Theme for XFCE4...\n(This might take a moment to fetch from GitHub)" 6 65
+    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib
+    [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
+    [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
+    git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
+    cd /tmp/WhiteSur-gtk-theme; mkdir -p /usr/local/share/themes
+    bash ./install.sh -d /usr/local/share/themes -t all -N glassy
+    git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
+    cd /tmp/WhiteSur-icon-theme; mkdir -p /usr/local/share/icons
+    bash ./install.sh -d /usr/local/share/icons -a
+    rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme
+    
+    local msg="WhiteSur Theme installed globally!\n\nTo apply it, log into your XFCE session and go to:\n\n1. Settings > Appearance > Style: Choose 'WhiteSur-Light' (or Dark)\n2. Settings > Appearance > Icons: Choose 'WhiteSur'\n3. Window Manager > Style: Choose 'WhiteSur'\n\nTip: Add a second panel at the bottom of the screen to act as a Mac Dock!"
+    bsddialog --msgbox "$msg" 16 75
 }
 
 xfce_config() {
@@ -445,7 +472,12 @@ Exec=startxfce4
 Type=Application
 DesktopNames=XFCE
 EOF
-    mark_done "6"
+    
+    local theme_msg="Do you want to install the WhiteSur macOS Theme for XFCE4?\n\n(This will download and prepare a beautiful Mac-like look for your desktop)"
+    if bsddialog --title "XFCE4 macOS Theme" --yesno "$theme_msg" 8 65; then
+        macos_xfce_theme
+    fi
+    mark_done "5"
 }
 
 # --- SERVICES & APPS ---
@@ -453,32 +485,51 @@ EOF
 apps_config() { 
     bsddialog --infobox "Installing Apps & Configuring Webcam..." 5 60
     pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
-    
     sysrc webcamd_enable="YES"
     ! sysrc -n kld_list | grep -q "cuse" && sysrc kld_list+="cuse"
     [ -n "$USER_NAME" ] && pw groupmod webcamd -m "$USER_NAME" 2>/dev/null
-    
+    mark_done "6"
+}
+
+xrdp_config() { 
+    bsddialog --infobox "Installing XRDP Server..." 5 50
+    pkg install -y xrdp xorgxrdp
+    sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
+
+    DE_CHOICE=$(bsddialog --title "XRDP Desktop Environment" --menu "Select the default desktop to launch for RDP sessions:" 13 65 3 \
+        "Plasma" "KDE Plasma 6" \
+        "XFCE" "XFCE4" \
+        "MATE" "MATE Desktop" 3>&1 1>&2 2>&3)
+
+    [ -z "$DE_CHOICE" ] && return
+
+    [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
+
+    cat > /usr/local/etc/xrdp/startwm.sh << EOF
+#!/bin/sh
+export LANG=fr_FR.UTF-8
+EOF
+
+    case "$DE_CHOICE" in
+        Plasma) echo "exec startplasma-x11" >> /usr/local/etc/xrdp/startwm.sh ;;
+        XFCE) echo "exec startxfce4" >> /usr/local/etc/xrdp/startwm.sh ;;
+        MATE) echo "exec mate-session" >> /usr/local/etc/xrdp/startwm.sh ;;
+    esac
+
+    chmod 555 /usr/local/etc/xrdp/startwm.sh
     mark_done "7"
 }
 
-remote_access_config() { 
-    bsddialog --infobox "Installing XRDP & x11vnc..." 5 60
-    pkg install -y xrdp xorgxrdp x11vnc zenity
-    sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
-    [ ! -f /usr/local/etc/xrdp/startwm.sh.backup ] && mv /usr/local/etc/xrdp/startwm.sh /usr/local/etc/xrdp/startwm.sh.backup
-    cat > /usr/local/etc/xrdp/startwm.sh << 'EOF'
-#!/bin/sh
-export LANG=fr_FR.UTF-8
-CHOICE=$(zenity --list --title="RDP Session" --text="Choose Desktop:" --radiolist --column="X" --column="Desktop" TRUE "Plasma 6 (KDE)" FALSE "MATE Desktop" FALSE "XFCE4" --width=350 --height=250 2>/dev/null)
-case "$CHOICE" in
-    "MATE Desktop") exec mate-session ;;
-    "XFCE4") exec startxfce4 ;;
-    *) exec startplasma-x11 ;;
-esac
-EOF
-    chmod 555 /usr/local/etc/xrdp/startwm.sh
-    VNC_PASS=$(bsddialog --title "VNC Console Setup" --insecure --passwordbox "VNC Password:" 9 60 3>&1 1>&2 2>&3)
-    [ -n "$VNC_PASS" ] && x11vnc -storepasswd "$VNC_PASS" /usr/local/etc/x11vnc.pwd && chmod 600 /usr/local/etc/x11vnc.pwd
+vnc_config() {
+    bsddialog --infobox "Installing x11vnc Console Shadowing..." 5 50
+    pkg install -y x11vnc
+    
+    VNC_PASS=$(bsddialog --title "VNC Console Setup" --insecure --passwordbox "Create VNC Password:" 9 60 3>&1 1>&2 2>&3)
+    if [ -n "$VNC_PASS" ]; then
+        x11vnc -storepasswd "$VNC_PASS" /usr/local/etc/x11vnc.pwd
+        chmod 600 /usr/local/etc/x11vnc.pwd
+    fi
+    
     cat > /usr/local/etc/rc.d/x11vnc << 'EOF'
 #!/bin/sh
 # REQUIRE: LOGIN dbus sddm
@@ -544,7 +595,6 @@ bluetooth_config() {
     if ! bsddialog --title "Bluetooth Warning" --defaultno --yesno "$msg" 8 60; then
         return
     fi
-
     bsddialog --infobox "Configuring Bluetooth & Audio bridge..." 5 60
     pkg install -y virtual_oss blueman
     ! sysrc -n kld_list | grep -q "ng_ubt" && sysrc kld_list+="ng_ubt"
@@ -554,36 +604,21 @@ bluetooth_config() {
 }
 
 macbook_2010_config() {
-    local msg="WARNING: This will configure legacy Broadcom Wi-Fi, FireWire, Apple SMC (Keyboard backlight/Fans) and Apple Trackpad.\n\nYou MUST have an active Ethernet connection right now to download the proprietary Wi-Fi firmware.\n\nContinue?"
+    local msg="WARNING: This configures legacy Broadcom Wi-Fi, FireWire, Apple SMC and Trackpad.\nYou MUST have an active Ethernet connection right now to download the proprietary Wi-Fi firmware.\n\nContinue?"
     if ! bsddialog --title "MacBook Pro 2010" --defaultno --yesno "$msg" 10 70; then
         return
     fi
-
     bsddialog --infobox "Installing Apple MacBook Pro 2010 specific drivers..." 5 60
-
-    # 1. Wi-Fi (Broadcom firmware)
     pkg install -y bwn-firmware-kmod
-    sysrc -f /boot/loader.conf if_bwn_load="YES"
-    sysrc -f /boot/loader.conf bwn_v4_ucode_load="YES"
-
-    # 2. Apple SMC (Keyboard Backlight, Fans, Sensors)
-    sysrc -f /boot/loader.conf asmc_load="YES"
-
-    # 3. Trackpad Multitouch (Wellspring)
-    sysrc -f /boot/loader.conf wsp_load="YES"
-
-    # 4. FireWire
+    sysrc -f /boot/loader.conf if_bwn_load="YES" bwn_v4_ucode_load="YES" asmc_load="YES" wsp_load="YES"
     ! sysrc -n kld_list | grep -q "firewire" && sysrc kld_list+="firewire"
 
-    # 5. Warnings for GPU, Audio & Keyboard
-    local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Do NOT use the NVIDIA Option (2)! Use Option 3 (DRM-KMOD) for the safe 'nouveau' driver.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'.\n\n4. WI-FI: Once you reboot, use Option 'w' in this script to configure your Wi-Fi connection."
+    local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Use Option 2 (Auto-Detect GPU) to safely configure your graphics.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'.\n\n4. WI-FI: Once rebooted, use Option 'w' to configure Wi-Fi."
     bsddialog --msgbox "$warn_msg" 18 75
-
     mark_done "h"
 }
 
 wifi_config() {
-    # Calls the native FreeBSD installer utility for networking
     clear
     if [ -x /usr/libexec/bsdinstall/netconfig ]; then
         bsdinstall netconfig
@@ -647,15 +682,15 @@ show_disclaimer
 
 while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
-        --menu "Select Installation Step:" 24 85 18 \
+        --menu "Select Installation Step:" 26 88 19 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Lang, User)")" \
-        "2" "$(get_label "2" "GPU: NVIDIA (Auto-Legacy/Latest)")" \
-        "3" "$(get_label "3" "GPU/VM: DRM-KMOD & VBox Guest Auto")" \
-        "4" "$(get_label "4" "Desktop: Plasma 6 + Printing + KWallet")" \
-        "5" "$(get_label "5" "Desktop: MATE")" \
-        "6" "$(get_label "6" "Desktop: XFCE4")" \
-        "7" "$(get_label "7" "Basic Apps & Fonts + Webcam Support")" \
-        "8" "$(get_label "8" "Remote: XRDP (Desktop) & x11vnc (Console)")" \
+        "2" "$(get_label "2" "GPU Auto-Config (Intel/AMD/NVIDIA/Hybrid)")" \
+        "3" "$(get_label "3" "Desktop: Plasma 6 + Printing + KWallet")" \
+        "4" "$(get_label "4" "Desktop: MATE")" \
+        "5" "$(get_label "5" "Desktop: XFCE4 (With optional macOS Theme)")" \
+        "6" "$(get_label "6" "Basic Apps & Fonts + Webcam Support")" \
+        "7" "$(get_label "7" "Remote: XRDP (RDP Desktop Session)")" \
+        "8" "$(get_label "8" "Remote: x11vnc (Console Shadowing)")" \
         "9" "$(get_label "9" "WINE & Winetricks (Needs LATEST)")" \
         "a" "$(get_label "a" "Samba Server (Interactive Share)")" \
         "b" "$(get_label "b" "VirtualBox 7.2 Host")" \
@@ -669,9 +704,10 @@ while true; do
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
-        1) initial_setup ;; 2) nvidia_config ;; 3) drm_config ;; 4) plasma_config ;; 5) mate_config ;; 6) xfce_config ;;
-        7) apps_config ;; 8) remote_access_config ;; 9) wine_config ;; a) samba_config ;; b) vbox_host_config ;;
-        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; h) macbook_2010_config ;; w) wifi_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
+        1) initial_setup ;; 2) gpu_config ;; 3) plasma_config ;; 4) mate_config ;; 5) xfce_config ;;
+        6) apps_config ;; 7) xrdp_config ;; 8) vnc_config ;; 9) wine_config ;; a) samba_config ;; 
+        b) vbox_host_config ;; c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; 
+        h) macbook_2010_config ;; w) wifi_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
     esac
 done
 clear
