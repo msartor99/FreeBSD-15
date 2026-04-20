@@ -543,6 +543,32 @@ bluetooth_config() {
     mark_done "g"
 }
 
+macbook_2010_config() {
+    local msg="WARNING: This will configure legacy Broadcom Wi-Fi, FireWire, and Apple Trackpad.\n\nYou MUST have an active Ethernet connection right now to download the proprietary Wi-Fi firmware.\n\nContinue?"
+    if ! bsddialog --title "MacBook Pro 2010" --defaultno --yesno "$msg" 10 65; then
+        return
+    fi
+
+    bsddialog --infobox "Installing Apple MacBook Pro 2010 specific drivers..." 5 60
+
+    # 1. Wi-Fi (Broadcom firmware)
+    pkg install -y bwn-firmware-kmod
+    sysrc -f /boot/loader.conf if_bwn_load="YES"
+    sysrc -f /boot/loader.conf bwn_v4_ucode_load="YES"
+
+    # 2. Trackpad Multitouch (Wellspring)
+    sysrc -f /boot/loader.conf wsp_load="YES"
+
+    # 3. FireWire
+    ! sysrc -n kld_list | grep -q "firewire" && sysrc kld_list+="firewire"
+
+    # 4. Warnings for GPU & Audio
+    local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. GPU: Do NOT use the NVIDIA Option (2) on this machine! Use Option 3 (DRM-KMOD) which will safely load the open-source 'nouveau' driver.\n\n2. AUDIO: The Cirrus Logic sound card is complex. If sound is weak or wrong, run 'cat /dev/sndstat' in terminal to find your speakers, then set 'sysctl hw.snd.default_unit=X' (replace X with the correct number)."
+    bsddialog --msgbox "$warn_msg" 14 75
+
+    mark_done "h"
+}
+
 vbox_host_config() {
     is_vbox_guest && return
     pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
@@ -597,7 +623,7 @@ show_disclaimer
 
 while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
-        --menu "Select Installation Step:" 22 85 16 \
+        --menu "Select Installation Step:" 23 85 17 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Lang, User)")" \
         "2" "$(get_label "2" "GPU: NVIDIA (Auto-Legacy/Latest)")" \
         "3" "$(get_label "3" "GPU/VM: DRM-KMOD & VBox Guest Auto")" \
@@ -612,6 +638,7 @@ while true; do
         "c" "$(get_label "c" "Multimedia Creation (GIMP, OBS...)")" \
         "d" "$(get_label "d" "Dev Tools (GCC, Python, VSCode)")" \
         "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
+        "h" "$(get_label "h" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
         "g" "$(get_label "g" "Bluetooth Support (WARNING)")" \
         "f" "$(get_label "f" "Upgrade to LATEST Branch (WARNING)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
@@ -619,7 +646,7 @@ while true; do
     case $MAIN_CHOICE in
         1) initial_setup ;; 2) nvidia_config ;; 3) drm_config ;; 4) plasma_config ;; 5) mate_config ;; 6) xfce_config ;;
         7) apps_config ;; 8) remote_access_config ;; 9) wine_config ;; a) samba_config ;; b) vbox_host_config ;;
-        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
+        c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; h) macbook_2010_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
     esac
 done
 clear
