@@ -270,6 +270,20 @@ EOF
             ;;
     esac
 
+    # --- INJECTION DU CLAVIER POUR LE DRAPEAU SDDM (Xsetup) ---
+    mkdir -p /usr/local/share/sddm/scripts
+    if [ ! -f /usr/local/share/sddm/scripts/Xsetup ]; then
+        echo "#!/bin/sh" > /usr/local/share/sddm/scripts/Xsetup
+        chmod +x /usr/local/share/sddm/scripts/Xsetup
+    fi
+    sed -i '' '/setxkbmap/d' /usr/local/share/sddm/scripts/Xsetup
+    if [ -n "$KBD_VARIANT" ]; then
+        echo "setxkbmap -layout $KBD_LAYOUT -variant $KBD_VARIANT" >> /usr/local/share/sddm/scripts/Xsetup
+    else
+        echo "setxkbmap -layout $KBD_LAYOUT" >> /usr/local/share/sddm/scripts/Xsetup
+    fi
+    # ----------------------------------------------------------
+
     mkdir -p /usr/local/etc/xdg
     cat > /usr/local/etc/xdg/kxkbrc <<EOF
 [Layout]
@@ -315,12 +329,17 @@ set_monitor_resolution() {
     mkdir -p /usr/local/share/sddm/scripts/
     if [ "$RES_CHOICE" != "Native" ]; then
         sysrc allscreens_flags="-f terminus-b32"
-        cat > /usr/local/share/sddm/scripts/Xsetup <<EOF
-#!/bin/sh
+        
+        # Sécurité : on crée le fichier s'il n'existe pas, et on AJOUTE (>>) la résolution pour ne pas écraser le clavier
+        [ ! -f /usr/local/share/sddm/scripts/Xsetup ] && echo "#!/bin/sh" > /usr/local/share/sddm/scripts/Xsetup
+        chmod +x /usr/local/share/sddm/scripts/Xsetup
+        sed -i '' '/xrandr --output/d' /usr/local/share/sddm/scripts/Xsetup
+        
+        cat >> /usr/local/share/sddm/scripts/Xsetup <<EOF
 OUTPUT=\$(xrandr | grep " connected" | awk '{print \$1}' | head -n 1)
 [ -n "\$OUTPUT" ] && xrandr --output "\$OUTPUT" --mode $RES_CHOICE
 EOF
-        chmod +x /usr/local/share/sddm/scripts/Xsetup
+        
         mkdir -p /usr/local/etc/xdg/autostart/
         cat > /usr/local/etc/xdg/autostart/force-resolution.desktop <<EOF
 [Desktop Entry]
@@ -472,7 +491,7 @@ macos_plasma_theme() {
     mkdir -p /usr/local/share/backgrounds
     fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
     
-    # DEMANDE A L'UTILISATEUR POUR SDDM
+    # SDDM Prompt
     if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (WhiteSur)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
         mkdir -p /usr/local/share/sddm/themes
         cp -r /tmp/WhiteSur-kde/sddm/WhiteSur /usr/local/share/sddm/themes/ 2>/dev/null
@@ -515,9 +534,210 @@ plasma_config() {
     mark_done "3"
 }
 
+macos_gnome_theme() {
+    bsddialog --infobox "Downloading and building WhiteSur macOS Theme for GNOME & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
+    
+    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed qt5-graphicaleffects qt5-quickcontrols2 qt5-svg qt5-imageformats
+    
+    mkdir -p /tmp/gnu_wrap
+    ln -sf /usr/local/bin/greadlink /tmp/gnu_wrap/readlink
+    ln -sf /usr/local/bin/gsed /tmp/gnu_wrap/sed
+    echo '#!/bin/sh' > /tmp/gnu_wrap/setterm
+    echo 'exit 0' >> /tmp/gnu_wrap/setterm
+    chmod +x /tmp/gnu_wrap/setterm
+    OLD_PATH=$PATH
+    export PATH="/tmp/gnu_wrap:$PATH"
+    
+    [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
+    [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
+    
+    git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
+    cd /tmp/WhiteSur-gtk-theme
+    mkdir -p /usr/local/share/themes
+    bash ./install.sh -d /usr/local/share/themes -t all -N glassy
+    
+    git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
+    cd /tmp/WhiteSur-icon-theme
+    mkdir -p /usr/local/share/icons
+    bash ./install.sh -d /usr/local/share/icons -a
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur 2>/dev/null
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur-Dark 2>/dev/null
+    
+    mkdir -p /usr/local/share/backgrounds
+    fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
+    
+    if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
+        cd /tmp
+        fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
+        unzip -q sugar-candy.zip
+        mkdir -p /usr/local/share/sddm/themes
+        cp -r sddm-sugar-candy-master /usr/local/share/sddm/themes/sugar-candy
+        cp /usr/local/share/backgrounds/WhiteSur-light.jpg /usr/local/share/sddm/themes/sugar-candy/Backgrounds/
+        
+        cat > /usr/local/share/sddm/themes/sugar-candy/theme.conf <<EOF
+[General]
+Background=Backgrounds/WhiteSur-light.jpg
+ScreenWidth=1920
+ScreenHeight=1080
+FormPosition=center
+MainColor=white
+AccentColor=#007aff
+EOF
+
+        mkdir -p /usr/local/etc/sddm.conf.d
+        echo "[Theme]" > /usr/local/etc/sddm.conf.d/theme.conf
+        echo "Current=sugar-candy" >> /usr/local/etc/sddm.conf.d/theme.conf
+        rm -rf /tmp/sugar-candy.zip /tmp/sddm-sugar-candy-master
+    fi
+    
+    rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
+    export PATH=$OLD_PATH
+    
+    # GNOME First Login Auto-Apply Magic
+    mkdir -p /usr/local/etc/xdg/autostart
+    cat > /usr/local/etc/xdg/autostart/whitesur-gnome-apply.desktop <<'EOF'
+[Desktop Entry]
+Name=Apply WhiteSur Theme GNOME
+Comment=Applies Mac theme automatically on first login
+Exec=sh -c 'if [ ! -f ~/.whitesur_gnome_applied ]; then sleep 3; gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.interface icon-theme "WhiteSur"; gsettings set org.gnome.desktop.wm.preferences theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.background picture-uri "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; gsettings set org.gnome.desktop.background picture-uri-dark "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; touch ~/.whitesur_gnome_applied; fi'
+Terminal=false
+Type=Application
+OnlyShowIn=GNOME;
+EOF
+    
+    local msg="WhiteSur Theme, Icons, and Wallpaper installed for GNOME!\n\nWhen you log into GNOME for the first time, everything will transform automatically.\n\nNote: GNOME uses its own Dash/Dock by default."
+    bsddialog --msgbox "$msg" 16 75
+}
+
+gnome_config() {
+    bsddialog --infobox "Installing GNOME Desktop (X11)..." 5 50
+    pkg install -y gnome gnome-tweaks alacarte
+
+    # VERROUILLAGE SYSTÈME : Interdiction formelle à GDM de démarrer
+    sysrc gdm_enable="NO"
+    sysrc sddm_enable="YES"
+
+    # Disable Wayland in GDM (Sécurité supplémentaire)
+    mkdir -p /usr/local/etc/gdm
+    cat > /usr/local/etc/gdm/custom.conf <<EOF
+[daemon]
+WaylandEnable=false
+EOF
+
+    # Hide GNOME Wayland session from SDDM to strictly force X11
+    if [ -f /usr/local/share/wayland-sessions/gnome.desktop ]; then
+        mv /usr/local/share/wayland-sessions/gnome.desktop /usr/local/share/wayland-sessions/gnome.desktop.bak 2>/dev/null
+    fi
+
+    local theme_msg="Do you want to install the WhiteSur macOS Theme for GNOME?\n\n(This will download the theme, icons, SDDM Sugar-Candy, and automate the Mac layout for your first login)"
+    if bsddialog --title "GNOME macOS Theme" --yesno "$theme_msg" 8 70; then
+        macos_gnome_theme
+    fi
+    mark_done "n"
+}
+
+macos_mate_theme() {
+    bsddialog --infobox "Downloading and building WhiteSur macOS Theme for MATE & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
+    
+    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed plank qt5-graphicaleffects qt5-quickcontrols2 qt5-svg qt5-imageformats
+    
+    mkdir -p /tmp/gnu_wrap
+    ln -sf /usr/local/bin/greadlink /tmp/gnu_wrap/readlink
+    ln -sf /usr/local/bin/gsed /tmp/gnu_wrap/sed
+    echo '#!/bin/sh' > /tmp/gnu_wrap/setterm
+    echo 'exit 0' >> /tmp/gnu_wrap/setterm
+    chmod +x /tmp/gnu_wrap/setterm
+    OLD_PATH=$PATH
+    export PATH="/tmp/gnu_wrap:$PATH"
+    
+    [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
+    [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
+    
+    # 1. GTK Window Theme
+    git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
+    cd /tmp/WhiteSur-gtk-theme
+    mkdir -p /usr/local/share/themes
+    bash ./install.sh -d /usr/local/share/themes -t all -N glassy
+    mkdir -p /usr/local/share/plank/themes
+    cp -r src/other/plank/theme-* /usr/local/share/plank/themes/ 2>/dev/null
+    
+    # 2. Icon Theme
+    git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
+    cd /tmp/WhiteSur-icon-theme
+    mkdir -p /usr/local/share/icons
+    bash ./install.sh -d /usr/local/share/icons -a
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur 2>/dev/null
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur-Dark 2>/dev/null
+    
+    # 3. Download Wallpaper
+    mkdir -p /usr/local/share/backgrounds
+    fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
+    
+    # 4. SDDM Prompt
+    if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
+        cd /tmp
+        fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
+        unzip -q sugar-candy.zip
+        mkdir -p /usr/local/share/sddm/themes
+        cp -r sddm-sugar-candy-master /usr/local/share/sddm/themes/sugar-candy
+        cp /usr/local/share/backgrounds/WhiteSur-light.jpg /usr/local/share/sddm/themes/sugar-candy/Backgrounds/
+        
+        cat > /usr/local/share/sddm/themes/sugar-candy/theme.conf <<EOF
+[General]
+Background=Backgrounds/WhiteSur-light.jpg
+ScreenWidth=1920
+ScreenHeight=1080
+FormPosition=center
+MainColor=white
+AccentColor=#007aff
+EOF
+
+        mkdir -p /usr/local/etc/sddm.conf.d
+        echo "[Theme]" > /usr/local/etc/sddm.conf.d/theme.conf
+        echo "Current=sugar-candy" >> /usr/local/etc/sddm.conf.d/theme.conf
+        rm -rf /tmp/sugar-candy.zip /tmp/sddm-sugar-candy-master
+    fi
+    
+    rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
+    export PATH=$OLD_PATH
+    
+    # 5. Autostart Plank Dock specifically for MATE
+    mkdir -p /usr/local/etc/xdg/autostart
+    cat > /usr/local/etc/xdg/autostart/plank-mate.desktop <<EOF
+[Desktop Entry]
+Name=Plank
+Comment=Stupidly simple dock
+Exec=plank
+Icon=plank
+Terminal=false
+Type=Application
+Categories=Utility;
+OnlyShowIn=MATE;
+EOF
+
+    # 6. MATE First Login Auto-Apply Magic (using gsettings)
+    cat > /usr/local/etc/xdg/autostart/whitesur-mate-apply.desktop <<'EOF'
+[Desktop Entry]
+Name=Apply WhiteSur Theme MATE
+Comment=Applies Mac theme automatically on first login
+Exec=sh -c 'if [ ! -f ~/.whitesur_mate_applied ]; then sleep 3; gsettings set org.mate.interface gtk-theme "WhiteSur-Dark"; gsettings set org.mate.interface icon-theme "WhiteSur"; gsettings set org.mate.Marco.general theme "WhiteSur-Dark"; gsettings set org.mate.background picture-filename "/usr/local/share/backgrounds/WhiteSur-light.jpg"; gsettings set net.launchpad.plank.dock.settings:/net/launchpad/plank/docks/dock1/ theme "WhiteSur"; touch ~/.whitesur_mate_applied; fi'
+Terminal=false
+Type=Application
+OnlyShowIn=MATE;
+EOF
+    
+    local msg="WhiteSur Theme, Plank Dock, and Wallpaper installed for MATE!\n\nWhen you log into MATE for the first time, everything will transform automatically.\n\nTip: MATE starts with a panel at the bottom. To make room for your new Mac Dock (Plank), simply right-click MATE's bottom panel and select 'Delete This Panel'."
+    bsddialog --msgbox "$msg" 18 75
+}
+
 mate_config() { 
     bsddialog --infobox "Installing MATE Desktop..." 5 50
-    pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs
+    pkg install -y mate mate-desktop octopkg pavucontrol eom remmina xdg-user-dirs plank xarchiver
+    
+    local theme_msg="Do you want to install the WhiteSur macOS Theme for MATE?\n\n(This will download the theme, icons, SDDM Sugar-Candy, and fully automate the Mac layout for your first login)"
+    if bsddialog --title "MATE macOS Theme" --yesno "$theme_msg" 8 70; then
+        macos_mate_theme
+    fi
     mark_done "4"
 }
 
@@ -555,7 +775,6 @@ macos_xfce_theme() {
     mkdir -p /usr/local/share/backgrounds
     fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
     
-    # DEMANDE A L'UTILISATEUR POUR SDDM
     if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
         cd /tmp
         fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
@@ -656,8 +875,9 @@ xrdp_config() {
     pkg install -y xrdp xorgxrdp
     sysrc xrdp_enable="YES" xrdp_sesman_enable="YES"
 
-    DE_CHOICE=$(bsddialog --title "XRDP Desktop Environment" --menu "Select the default desktop to launch for RDP sessions:" 13 65 3 \
+    DE_CHOICE=$(bsddialog --title "XRDP Desktop Environment" --menu "Select the default desktop to launch for RDP sessions:" 14 65 4 \
         "Plasma" "KDE Plasma 6" \
+        "GNOME" "GNOME Desktop" \
         "XFCE" "XFCE4" \
         "MATE" "MATE Desktop" 3>&1 1>&2 2>&3)
 
@@ -672,6 +892,7 @@ EOF
 
     case "$DE_CHOICE" in
         Plasma) echo "exec startplasma-x11" >> /usr/local/etc/xrdp/startwm.sh ;;
+        GNOME) echo "exec gnome-session" >> /usr/local/etc/xrdp/startwm.sh ;;
         XFCE) echo "exec startxfce4" >> /usr/local/etc/xrdp/startwm.sh ;;
         MATE) echo "exec mate-session" >> /usr/local/etc/xrdp/startwm.sh ;;
     esac
@@ -842,12 +1063,13 @@ show_disclaimer
 
 while true; do
     MAIN_CHOICE=$(bsddialog --backtitle "$BACKTITLE" --title "$TITLE" \
-        --menu "Select Installation Step:" 26 88 19 \
+        --menu "Select Installation Step:" 26 88 20 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Lang, User)")" \
         "2" "$(get_label "2" "GPU Configuration (Manual / Auto-Hybrid)")" \
         "3" "$(get_label "3" "Desktop: Plasma 6 (With optional macOS Theme)")" \
-        "4" "$(get_label "4" "Desktop: MATE")" \
+        "4" "$(get_label "4" "Desktop: MATE (With optional macOS Theme)")" \
         "5" "$(get_label "5" "Desktop: XFCE4 (With optional macOS Theme)")" \
+        "n" "$(get_label "n" "Desktop: GNOME (X11 Session - No Wayland)")" \
         "6" "$(get_label "6" "Basic Apps & Fonts + Webcam Support")" \
         "7" "$(get_label "7" "Remote: XRDP (RDP Desktop Session)")" \
         "8" "$(get_label "8" "Remote: x11vnc (Console Shadowing)")" \
@@ -864,7 +1086,7 @@ while true; do
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
-        1) initial_setup ;; 2) gpu_config ;; 3) plasma_config ;; 4) mate_config ;; 5) xfce_config ;;
+        1) initial_setup ;; 2) gpu_config ;; 3) plasma_config ;; 4) mate_config ;; 5) xfce_config ;; n) gnome_config ;;
         6) apps_config ;; 7) xrdp_config ;; 8) vnc_config ;; 9) wine_config ;; a) samba_config ;; 
         b) vbox_host_config ;; c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; 
         h) macbook_2010_config ;; w) wifi_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
