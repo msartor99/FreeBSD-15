@@ -1069,7 +1069,7 @@ while true; do
         "3" "$(get_label "3" "Desktop: Plasma 6 (With optional macOS Theme)")" \
         "4" "$(get_label "4" "Desktop: MATE (With optional macOS Theme)")" \
         "5" "$(get_label "5" "Desktop: XFCE4 (With optional macOS Theme)")" \
-        "n" "$(get_label "n" "Desktop: GNOME (X11 Session - No Wayland)")" \
+        "n" "$(get_label "n" "Desktop: GNOME (X11 - With optional macOS Theme)")" \
         "6" "$(get_label "6" "Basic Apps & Fonts + Webcam Support")" \
         "7" "$(get_label "7" "Remote: XRDP (RDP Desktop Session)")" \
         "8" "$(get_label "8" "Remote: x11vnc (Console Shadowing)")" \
