@@ -310,48 +310,8 @@ EOF
     mark_done "1"
 }
 
-set_monitor_resolution() {
-    RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:" 17 75 6 \
-        "Native" "Maximum Monitor Capability (Default)" \
-        "3840x2160" "Force 3840x2160 (4K UHD)" \
-        "2560x1440" "Force 2560x1440 (27\" 4K optimized)" \
-        "1920x1200" "Force 1920x1200" \
-        "1920x1080" "Force 1920x1080" \
-        "Custom" "Type custom resolution" 3>&1 1>&2 2>&3)
+# --- UNIFIED SMART GPU CONFIGURATION (Option 2) ---
 
-    [ -z "$RES_CHOICE" ] && return
-    
-    if [ "$RES_CHOICE" = "Custom" ]; then
-        RES_CHOICE=$(bsddialog --inputbox "Enter custom resolution (e.g., 2560x1080):" 9 50 "2560x1440" 3>&1 1>&2 2>&3)
-        [ -z "$RES_CHOICE" ] && RES_CHOICE="Native"
-    fi
-
-    mkdir -p /usr/local/share/sddm/scripts/
-    if [ "$RES_CHOICE" != "Native" ]; then
-        sysrc allscreens_flags="-f terminus-b32"
-        
-        # Sécurité : on crée le fichier s'il n'existe pas, et on AJOUTE (>>) la résolution pour ne pas écraser le clavier
-        [ ! -f /usr/local/share/sddm/scripts/Xsetup ] && echo "#!/bin/sh" > /usr/local/share/sddm/scripts/Xsetup
-        chmod +x /usr/local/share/sddm/scripts/Xsetup
-        sed -i '' '/xrandr --output/d' /usr/local/share/sddm/scripts/Xsetup
-        
-        cat >> /usr/local/share/sddm/scripts/Xsetup <<EOF
-OUTPUT=\$(xrandr | grep " connected" | awk '{print \$1}' | head -n 1)
-[ -n "\$OUTPUT" ] && xrandr --output "\$OUTPUT" --mode $RES_CHOICE
-EOF
-        
-        mkdir -p /usr/local/etc/xdg/autostart/
-        cat > /usr/local/etc/xdg/autostart/force-resolution.desktop <<EOF
-[Desktop Entry]
-Type=Application
-Name=Force Resolution
-Exec=sh -c "OUTPUT=\$(xrandr | grep ' connected' | awk '{print \$1}' | head -n 1); xrandr --output \$OUTPUT --mode $RES_CHOICE"
-X-KDE-autostart-phase=1
-EOF
-    fi
-}
-
-# --- UNIFIED SMART GPU CONFIGURATION ---
 install_nvidia_interactive() {
     local IS_HYBRID="$1"
     local GPU_INFO=$(pciconf -lv | grep -i -B 1 -A 2 "vendor.*NVIDIA" | grep "device.*=" | grep -o '\[.*\]' | tr -d '[]')
@@ -377,6 +337,46 @@ install_nvidia_interactive() {
     
     if [ "$IS_HYBRID" != "YES" ]; then
         nvidia-xconfig
+    fi
+}
+
+set_monitor_resolution() {
+    RES_CHOICE=$(bsddialog --title "Display Resolution" --menu "Select base resolution for SDDM/X11:" 17 75 6 \
+        "Native" "Maximum Monitor Capability (Default)" \
+        "3840x2160" "Force 3840x2160 (4K UHD)" \
+        "2560x1440" "Force 2560x1440 (27\" 4K optimized)" \
+        "1920x1200" "Force 1920x1200" \
+        "1920x1080" "Force 1920x1080" \
+        "Custom" "Type custom resolution" 3>&1 1>&2 2>&3)
+
+    [ -z "$RES_CHOICE" ] && return
+    
+    if [ "$RES_CHOICE" = "Custom" ]; then
+        RES_CHOICE=$(bsddialog --inputbox "Enter custom resolution (e.g., 2560x1080):" 9 50 "2560x1440" 3>&1 1>&2 2>&3)
+        [ -z "$RES_CHOICE" ] && RES_CHOICE="Native"
+    fi
+
+    mkdir -p /usr/local/share/sddm/scripts/
+    if [ "$RES_CHOICE" != "Native" ]; then
+        sysrc allscreens_flags="-f terminus-b32"
+        
+        [ ! -f /usr/local/share/sddm/scripts/Xsetup ] && echo "#!/bin/sh" > /usr/local/share/sddm/scripts/Xsetup
+        chmod +x /usr/local/share/sddm/scripts/Xsetup
+        sed -i '' '/xrandr --output/d' /usr/local/share/sddm/scripts/Xsetup
+        
+        cat >> /usr/local/share/sddm/scripts/Xsetup <<EOF
+OUTPUT=\$(xrandr | grep " connected" | awk '{print \$1}' | head -n 1)
+[ -n "\$OUTPUT" ] && xrandr --output "\$OUTPUT" --mode $RES_CHOICE
+EOF
+        
+        mkdir -p /usr/local/etc/xdg/autostart/
+        cat > /usr/local/etc/xdg/autostart/force-resolution.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Force Resolution
+Exec=sh -c "OUTPUT=\$(xrandr | grep ' connected' | awk '{print \$1}' | head -n 1); xrandr --output \$OUTPUT --mode $RES_CHOICE"
+X-KDE-autostart-phase=1
+EOF
     fi
 }
 
@@ -450,8 +450,37 @@ gpu_config() {
     mark_done "2"
 }
 
+# --- NASA THEME (Option 3) ---
+
+nasa_theme() { 
+    bsddialog --infobox "Downloading and configuring NASA Theme..." 5 60
+    [ -d /tmp/fb14_assets ] && rm -rf /tmp/fb14_assets
+    fetch -o /tmp/fb14_assets.zip https://github.com/msartor99/FreeBSD14/archive/refs/heads/main.zip
+    unzip -q /tmp/fb14_assets.zip -d /tmp/; mv /tmp/FreeBSD14-main /tmp/fb14_assets
+    mkdir -p /usr/local/share/sddm/themes/nasa
+    cp -r /usr/local/share/sddm/themes/maldives/* /usr/local/share/sddm/themes/nasa/ 2>/dev/null
+    cp -f /tmp/fb14_assets/Main.qml /usr/local/share/sddm/themes/nasa/
+    cp -f /tmp/fb14_assets/metadata.desktop /usr/local/share/sddm/themes/nasa/
+    cp -f /tmp/fb14_assets/nasa2560login.jpg /usr/local/share/sddm/themes/nasa/background.jpg
+    [ -f /usr/local/share/sddm/themes/nasa/theme.conf ] && sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
+    mkdir -p /usr/local/etc/sddm.conf.d; echo "[Theme]\nCurrent=nasa" > /usr/local/etc/sddm.conf.d/theme.conf
+    mkdir -p /boot/images
+    cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
+    cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
+    cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
+    sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
+    sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
+    [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ] && mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
+    [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ] && mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
+    ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
+    ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
+    sysrc -f /boot/loader.conf loader_color="YES" splash="/boot/images/splash.png" splash_bmp_load="YES" splash_txt_load="YES" splash_pcx_load="YES"
+    mark_done "3"
+}
+
 # --- DESKTOP ENVIRONMENTS ---
 
+# Option 4: Plasma
 macos_plasma_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for KDE Plasma 6...\n(Extracting files globally for all users)" 6 70
     
@@ -491,7 +520,6 @@ macos_plasma_theme() {
     mkdir -p /usr/local/share/backgrounds
     fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
     
-    # SDDM Prompt
     if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (WhiteSur)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
         mkdir -p /usr/local/share/sddm/themes
         cp -r /tmp/WhiteSur-kde/sddm/WhiteSur /usr/local/share/sddm/themes/ 2>/dev/null
@@ -530,112 +558,10 @@ plasma_config() {
     if bsddialog --title "KDE Plasma macOS Theme" --yesno "$theme_msg" 8 70; then
         macos_plasma_theme
     fi
-    
-    mark_done "3"
+    mark_done "4"
 }
 
-macos_gnome_theme() {
-    bsddialog --infobox "Downloading and building WhiteSur macOS Theme for GNOME & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
-    
-    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed qt5-graphicaleffects qt5-quickcontrols2 qt5-svg qt5-imageformats
-    
-    mkdir -p /tmp/gnu_wrap
-    ln -sf /usr/local/bin/greadlink /tmp/gnu_wrap/readlink
-    ln -sf /usr/local/bin/gsed /tmp/gnu_wrap/sed
-    echo '#!/bin/sh' > /tmp/gnu_wrap/setterm
-    echo 'exit 0' >> /tmp/gnu_wrap/setterm
-    chmod +x /tmp/gnu_wrap/setterm
-    OLD_PATH=$PATH
-    export PATH="/tmp/gnu_wrap:$PATH"
-    
-    [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
-    [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
-    
-    git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
-    cd /tmp/WhiteSur-gtk-theme
-    mkdir -p /usr/local/share/themes
-    bash ./install.sh -d /usr/local/share/themes -t all -N glassy
-    
-    git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
-    cd /tmp/WhiteSur-icon-theme
-    mkdir -p /usr/local/share/icons
-    bash ./install.sh -d /usr/local/share/icons -a
-    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur 2>/dev/null
-    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur-Dark 2>/dev/null
-    
-    mkdir -p /usr/local/share/backgrounds
-    fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
-    
-    if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
-        cd /tmp
-        fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
-        unzip -q sugar-candy.zip
-        mkdir -p /usr/local/share/sddm/themes
-        cp -r sddm-sugar-candy-master /usr/local/share/sddm/themes/sugar-candy
-        cp /usr/local/share/backgrounds/WhiteSur-light.jpg /usr/local/share/sddm/themes/sugar-candy/Backgrounds/
-        
-        cat > /usr/local/share/sddm/themes/sugar-candy/theme.conf <<EOF
-[General]
-Background=Backgrounds/WhiteSur-light.jpg
-ScreenWidth=1920
-ScreenHeight=1080
-FormPosition=center
-MainColor=white
-AccentColor=#007aff
-EOF
-
-        mkdir -p /usr/local/etc/sddm.conf.d
-        echo "[Theme]" > /usr/local/etc/sddm.conf.d/theme.conf
-        echo "Current=sugar-candy" >> /usr/local/etc/sddm.conf.d/theme.conf
-        rm -rf /tmp/sugar-candy.zip /tmp/sddm-sugar-candy-master
-    fi
-    
-    rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
-    export PATH=$OLD_PATH
-    
-    # GNOME First Login Auto-Apply Magic
-    mkdir -p /usr/local/etc/xdg/autostart
-    cat > /usr/local/etc/xdg/autostart/whitesur-gnome-apply.desktop <<'EOF'
-[Desktop Entry]
-Name=Apply WhiteSur Theme GNOME
-Comment=Applies Mac theme automatically on first login
-Exec=sh -c 'if [ ! -f ~/.whitesur_gnome_applied ]; then sleep 3; gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.interface icon-theme "WhiteSur"; gsettings set org.gnome.desktop.wm.preferences theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.background picture-uri "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; gsettings set org.gnome.desktop.background picture-uri-dark "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; touch ~/.whitesur_gnome_applied; fi'
-Terminal=false
-Type=Application
-OnlyShowIn=GNOME;
-EOF
-    
-    local msg="WhiteSur Theme, Icons, and Wallpaper installed for GNOME!\n\nWhen you log into GNOME for the first time, everything will transform automatically.\n\nNote: GNOME uses its own Dash/Dock by default."
-    bsddialog --msgbox "$msg" 16 75
-}
-
-gnome_config() {
-    bsddialog --infobox "Installing GNOME Desktop (X11)..." 5 50
-    pkg install -y gnome gnome-tweaks alacarte
-
-    # VERROUILLAGE SYSTÈME : Interdiction formelle à GDM de démarrer
-    sysrc gdm_enable="NO"
-    sysrc sddm_enable="YES"
-
-    # Disable Wayland in GDM (Sécurité supplémentaire)
-    mkdir -p /usr/local/etc/gdm
-    cat > /usr/local/etc/gdm/custom.conf <<EOF
-[daemon]
-WaylandEnable=false
-EOF
-
-    # Hide GNOME Wayland session from SDDM to strictly force X11
-    if [ -f /usr/local/share/wayland-sessions/gnome.desktop ]; then
-        mv /usr/local/share/wayland-sessions/gnome.desktop /usr/local/share/wayland-sessions/gnome.desktop.bak 2>/dev/null
-    fi
-
-    local theme_msg="Do you want to install the WhiteSur macOS Theme for GNOME?\n\n(This will download the theme, icons, SDDM Sugar-Candy, and automate the Mac layout for your first login)"
-    if bsddialog --title "GNOME macOS Theme" --yesno "$theme_msg" 8 70; then
-        macos_gnome_theme
-    fi
-    mark_done "n"
-}
-
+# Option 5: MATE
 macos_mate_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for MATE & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
     
@@ -738,9 +664,10 @@ mate_config() {
     if bsddialog --title "MATE macOS Theme" --yesno "$theme_msg" 8 70; then
         macos_mate_theme
     fi
-    mark_done "4"
+    mark_done "5"
 }
 
+# Option 6: XFCE4
 macos_xfce_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for XFCE4...\n(This might take a moment to fetch from GitHub)" 6 65
     
@@ -856,10 +783,110 @@ EOF
     if bsddialog --title "XFCE4 macOS Theme" --yesno "$theme_msg" 8 70; then
         macos_xfce_theme
     fi
-    mark_done "5"
+    mark_done "6"
 }
 
-# --- SERVICES & APPS ---
+# Option 7: GNOME
+macos_gnome_theme() {
+    bsddialog --infobox "Downloading and building WhiteSur macOS Theme for GNOME & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
+    
+    pkg install -y bash git gtk-murrine-engine gtk-engines2 sassc glib coreutils gsed qt5-graphicaleffects qt5-quickcontrols2 qt5-svg qt5-imageformats
+    
+    mkdir -p /tmp/gnu_wrap
+    ln -sf /usr/local/bin/greadlink /tmp/gnu_wrap/readlink
+    ln -sf /usr/local/bin/gsed /tmp/gnu_wrap/sed
+    echo '#!/bin/sh' > /tmp/gnu_wrap/setterm
+    echo 'exit 0' >> /tmp/gnu_wrap/setterm
+    chmod +x /tmp/gnu_wrap/setterm
+    OLD_PATH=$PATH
+    export PATH="/tmp/gnu_wrap:$PATH"
+    
+    [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
+    [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
+    
+    git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
+    cd /tmp/WhiteSur-gtk-theme
+    mkdir -p /usr/local/share/themes
+    bash ./install.sh -d /usr/local/share/themes -t all -N glassy
+    
+    git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
+    cd /tmp/WhiteSur-icon-theme
+    mkdir -p /usr/local/share/icons
+    bash ./install.sh -d /usr/local/share/icons -a
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur 2>/dev/null
+    gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur-Dark 2>/dev/null
+    
+    mkdir -p /usr/local/share/backgrounds
+    fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
+    
+    if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
+        cd /tmp
+        fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
+        unzip -q sugar-candy.zip
+        mkdir -p /usr/local/share/sddm/themes
+        cp -r sddm-sugar-candy-master /usr/local/share/sddm/themes/sugar-candy
+        cp /usr/local/share/backgrounds/WhiteSur-light.jpg /usr/local/share/sddm/themes/sugar-candy/Backgrounds/
+        
+        cat > /usr/local/share/sddm/themes/sugar-candy/theme.conf <<EOF
+[General]
+Background=Backgrounds/WhiteSur-light.jpg
+ScreenWidth=1920
+ScreenHeight=1080
+FormPosition=center
+MainColor=white
+AccentColor=#007aff
+EOF
+
+        mkdir -p /usr/local/etc/sddm.conf.d
+        echo "[Theme]" > /usr/local/etc/sddm.conf.d/theme.conf
+        echo "Current=sugar-candy" >> /usr/local/etc/sddm.conf.d/theme.conf
+        rm -rf /tmp/sugar-candy.zip /tmp/sddm-sugar-candy-master
+    fi
+    
+    rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
+    export PATH=$OLD_PATH
+    
+    # GNOME First Login Auto-Apply Magic
+    mkdir -p /usr/local/etc/xdg/autostart
+    cat > /usr/local/etc/xdg/autostart/whitesur-gnome-apply.desktop <<'EOF'
+[Desktop Entry]
+Name=Apply WhiteSur Theme GNOME
+Comment=Applies Mac theme automatically on first login
+Exec=sh -c 'if [ ! -f ~/.whitesur_gnome_applied ]; then sleep 3; gsettings set org.gnome.desktop.interface gtk-theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.interface icon-theme "WhiteSur"; gsettings set org.gnome.desktop.wm.preferences theme "WhiteSur-Dark"; gsettings set org.gnome.desktop.background picture-uri "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; gsettings set org.gnome.desktop.background picture-uri-dark "file:///usr/local/share/backgrounds/WhiteSur-light.jpg"; touch ~/.whitesur_gnome_applied; fi'
+Terminal=false
+Type=Application
+OnlyShowIn=GNOME;
+EOF
+    
+    local msg="WhiteSur Theme, Icons, and Wallpaper installed for GNOME!\n\nWhen you log into GNOME for the first time, everything will transform automatically.\n\nNote: GNOME uses its own Dash/Dock by default."
+    bsddialog --msgbox "$msg" 16 75
+}
+
+gnome_config() {
+    bsddialog --infobox "Installing GNOME Desktop (X11)..." 5 50
+    pkg install -y gnome gnome-tweaks alacarte
+
+    sysrc gdm_enable="NO"
+    sysrc sddm_enable="YES"
+
+    mkdir -p /usr/local/etc/gdm
+    cat > /usr/local/etc/gdm/custom.conf <<EOF
+[daemon]
+WaylandEnable=false
+EOF
+
+    if [ -f /usr/local/share/wayland-sessions/gnome.desktop ]; then
+        mv /usr/local/share/wayland-sessions/gnome.desktop /usr/local/share/wayland-sessions/gnome.desktop.bak 2>/dev/null
+    fi
+
+    local theme_msg="Do you want to install the WhiteSur macOS Theme for GNOME?\n\n(This will download the theme, icons, SDDM Sugar-Candy, and automate the Mac layout for your first login)"
+    if bsddialog --title "GNOME macOS Theme" --yesno "$theme_msg" 8 70; then
+        macos_gnome_theme
+    fi
+    mark_done "7"
+}
+
+# --- SERVICES & APPS (Options 8 to j) ---
 
 apps_config() { 
     bsddialog --infobox "Installing Apps & Configuring Webcam..." 5 60
@@ -867,7 +894,7 @@ apps_config() {
     sysrc webcamd_enable="YES"
     ! sysrc -n kld_list | grep -q "cuse" && sysrc kld_list+="cuse"
     [ -n "$USER_NAME" ] && pw groupmod webcamd -m "$USER_NAME" 2>/dev/null
-    mark_done "6"
+    mark_done "8"
 }
 
 xrdp_config() { 
@@ -898,7 +925,7 @@ EOF
     esac
 
     chmod 555 /usr/local/etc/xrdp/startwm.sh
-    mark_done "7"
+    mark_done "9"
 }
 
 vnc_config() {
@@ -923,7 +950,7 @@ load_rc_config $name
 run_rc_command "$1"
 EOF
     chmod +x /usr/local/etc/rc.d/x11vnc; sysrc x11vnc_enable="YES"
-    mark_done "8"
+    mark_done "a"
 }
 
 wine_config() {
@@ -935,7 +962,7 @@ wine_config() {
             return
         fi
     fi
-    pkg install -y wine winetricks; mark_done "9"
+    pkg install -y wine winetricks; mark_done "b"
 }
 
 samba_config() { 
@@ -968,20 +995,22 @@ samba_config() {
 EOF
     sysrc samba_server_enable="YES"; service samba_server restart 2>/dev/null
     [ "$SMB_GUEST" = "no" ] && [ -n "$SMB_PASS" ] && (echo "$SMB_PASS"; echo "$SMB_PASS") | smbpasswd -s -a "$SMB_USER"
-    mark_done "a"
+    mark_done "c"
 }
 
-bluetooth_config() {
-    local msg="Warning: Bluetooth is not fully integrated in FreeBSD, are you sure?"
-    if ! bsddialog --title "Bluetooth Warning" --defaultno --yesno "$msg" 8 60; then
-        return
-    fi
-    bsddialog --infobox "Configuring Bluetooth & Audio bridge..." 5 60
-    pkg install -y virtual_oss blueman
-    ! sysrc -n kld_list | grep -q "ng_ubt" && sysrc kld_list+="ng_ubt"
-    sysrc hcsecd_enable="YES" bthidd_enable="YES" sdpd_enable="YES"
-    [ -n "$USER_NAME" ] && pw groupmod network -m "$USER_NAME" 2>/dev/null
-    mark_done "g"
+vbox_host_config() {
+    is_vbox_guest && return
+    pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
+    pw groupmod vboxusers -m root; [ -n "$USER_NAME" ] && pw groupmod vboxusers -m "$USER_NAME"
+    mark_done "d"
+}
+
+multimedia_config() {
+    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ffmpeg gstreamer1-plugins-all; mark_done "e"
+}
+
+development_config() {
+    pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode; mark_done "f"
 }
 
 macbook_2010_config() {
@@ -996,64 +1025,36 @@ macbook_2010_config() {
 
     local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Use Option 2 (Auto-Detect GPU) to safely configure your graphics.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'.\n\n4. WI-FI: Once rebooted, use Option 'w' to configure Wi-Fi."
     bsddialog --msgbox "$warn_msg" 18 75
-    mark_done "h"
+    mark_done "g"
 }
 
 wifi_config() {
     clear
     if [ -x /usr/libexec/bsdinstall/netconfig ]; then
         bsdinstall netconfig
-        mark_done "w"
+        mark_done "h"
     else
         bsddialog --msgbox "Error: The bsdinstall network utility was not found on this system." 6 70
     fi
 }
 
-vbox_host_config() {
-    is_vbox_guest && return
-    pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
-    pw groupmod vboxusers -m root; [ -n "$USER_NAME" ] && pw groupmod vboxusers -m "$USER_NAME"
-    mark_done "b"
-}
-
-multimedia_config() {
-    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ffmpeg gstreamer1-plugins-all; mark_done "c"
-}
-
-development_config() {
-    pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode; mark_done "d"
-}
-
-nasa_theme() { 
-    bsddialog --infobox "Downloading and configuring NASA Theme..." 5 60
-    [ -d /tmp/fb14_assets ] && rm -rf /tmp/fb14_assets
-    fetch -o /tmp/fb14_assets.zip https://github.com/msartor99/FreeBSD14/archive/refs/heads/main.zip
-    unzip -q /tmp/fb14_assets.zip -d /tmp/; mv /tmp/FreeBSD14-main /tmp/fb14_assets
-    mkdir -p /usr/local/share/sddm/themes/nasa
-    cp -r /usr/local/share/sddm/themes/maldives/* /usr/local/share/sddm/themes/nasa/ 2>/dev/null
-    cp -f /tmp/fb14_assets/Main.qml /usr/local/share/sddm/themes/nasa/
-    cp -f /tmp/fb14_assets/metadata.desktop /usr/local/share/sddm/themes/nasa/
-    cp -f /tmp/fb14_assets/nasa2560login.jpg /usr/local/share/sddm/themes/nasa/background.jpg
-    [ -f /usr/local/share/sddm/themes/nasa/theme.conf ] && sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
-    mkdir -p /usr/local/etc/sddm.conf.d; echo "[Theme]\nCurrent=nasa" > /usr/local/etc/sddm.conf.d/theme.conf
-    mkdir -p /boot/images
-    cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
-    cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
-    cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
-    sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
-    sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
-    [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ] && mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
-    [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ] && mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
-    ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
-    ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
-    sysrc -f /boot/loader.conf loader_color="YES" splash="/boot/images/splash.png" splash_bmp_load="YES" splash_txt_load="YES" splash_pcx_load="YES"
-    mark_done "e"
+bluetooth_config() {
+    local msg="Warning: Bluetooth is not fully integrated in FreeBSD, are you sure?"
+    if ! bsddialog --title "Bluetooth Warning" --defaultno --yesno "$msg" 8 60; then
+        return
+    fi
+    bsddialog --infobox "Configuring Bluetooth & Audio bridge..." 5 60
+    pkg install -y virtual_oss blueman
+    ! sysrc -n kld_list | grep -q "ng_ubt" && sysrc kld_list+="ng_ubt"
+    sysrc hcsecd_enable="YES" bthidd_enable="YES" sdpd_enable="YES"
+    [ -n "$USER_NAME" ] && pw groupmod network -m "$USER_NAME" 2>/dev/null
+    mark_done "i"
 }
 
 switch_latest() { 
     local msg="WARNING: Switching to LATEST branch can lead to temporary package breakage or GUI instability. Proceed?"
     if bsddialog --title "DANGER: LATEST Branch" --defaultno --yesno "$msg" 10 70; then
-        sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "f"
+        sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "j"
     fi
 }
 
@@ -1066,30 +1067,46 @@ while true; do
         --menu "Select Installation Step:" 26 88 20 \
         "1" "$(get_label "1" "Initial Setup (System, Hardware, Lang, User)")" \
         "2" "$(get_label "2" "GPU Configuration (Manual / Auto-Hybrid)")" \
-        "3" "$(get_label "3" "Desktop: Plasma 6 (With optional macOS Theme)")" \
-        "4" "$(get_label "4" "Desktop: MATE (With optional macOS Theme)")" \
-        "5" "$(get_label "5" "Desktop: XFCE4 (With optional macOS Theme)")" \
-        "n" "$(get_label "n" "Desktop: GNOME (X11 - With optional macOS Theme)")" \
-        "6" "$(get_label "6" "Basic Apps & Fonts + Webcam Support")" \
-        "7" "$(get_label "7" "Remote: XRDP (RDP Desktop Session)")" \
-        "8" "$(get_label "8" "Remote: x11vnc (Console Shadowing)")" \
-        "9" "$(get_label "9" "WINE & Winetricks (Needs LATEST)")" \
-        "a" "$(get_label "a" "Samba Server (Interactive Share)")" \
-        "b" "$(get_label "b" "VirtualBox 7.2 Host")" \
-        "c" "$(get_label "c" "Multimedia Creation (GIMP, OBS...)")" \
-        "d" "$(get_label "d" "Dev Tools (GCC, Python, VSCode)")" \
-        "e" "$(get_label "e" "NASA Theme (SDDM & Boot)")" \
-        "h" "$(get_label "h" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
-        "w" "$(get_label "w" "Wi-Fi Configuration (Native bsdinstall GUI)")" \
-        "g" "$(get_label "g" "Bluetooth Support (WARNING)")" \
-        "f" "$(get_label "f" "Upgrade to LATEST Branch (WARNING)")" \
+        "3" "$(get_label "3" "NASA Theme (SDDM & Boot)")" \
+        "4" "$(get_label "4" "Desktop: Plasma 6 (With optional macOS Theme)")" \
+        "5" "$(get_label "5" "Desktop: MATE (With optional macOS Theme)")" \
+        "6" "$(get_label "6" "Desktop: XFCE4 (With optional macOS Theme)")" \
+        "7" "$(get_label "7" "Desktop: GNOME (X11 - With optional macOS Theme)")" \
+        "8" "$(get_label "8" "Basic Apps & Fonts + Webcam Support")" \
+        "9" "$(get_label "9" "Remote: XRDP (RDP Desktop Session)")" \
+        "a" "$(get_label "a" "Remote: x11vnc (Console Shadowing)")" \
+        "b" "$(get_label "b" "WINE & Winetricks (Needs LATEST)")" \
+        "c" "$(get_label "c" "Samba Server (Interactive Share)")" \
+        "d" "$(get_label "d" "VirtualBox 7.2 Host")" \
+        "e" "$(get_label "e" "Multimedia Creation (GIMP, OBS...)")" \
+        "f" "$(get_label "f" "Dev Tools (GCC, Python, VSCode)")" \
+        "g" "$(get_label "g" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
+        "h" "$(get_label "h" "Wi-Fi Configuration (Native bsdinstall GUI)")" \
+        "i" "$(get_label "i" "Bluetooth Support (WARNING)")" \
+        "j" "$(get_label "j" "Upgrade to LATEST Branch (WARNING)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
-        1) initial_setup ;; 2) gpu_config ;; 3) plasma_config ;; 4) mate_config ;; 5) xfce_config ;; n) gnome_config ;;
-        6) apps_config ;; 7) xrdp_config ;; 8) vnc_config ;; 9) wine_config ;; a) samba_config ;; 
-        b) vbox_host_config ;; c) multimedia_config ;; d) development_config ;; e) nasa_theme ;; 
-        h) macbook_2010_config ;; w) wifi_config ;; g) bluetooth_config ;; f) switch_latest ;; q|*) break ;;
+        1) initial_setup ;;
+        2) gpu_config ;;
+        3) nasa_theme ;;
+        4) plasma_config ;;
+        5) mate_config ;;
+        6) xfce_config ;;
+        7) gnome_config ;;
+        8) apps_config ;;
+        9) xrdp_config ;;
+        a) vnc_config ;;
+        b) wine_config ;;
+        c) samba_config ;;
+        d) vbox_host_config ;;
+        e) multimedia_config ;;
+        f) development_config ;;
+        g) macbook_2010_config ;;
+        h) wifi_config ;;
+        i) bluetooth_config ;;
+        j) switch_latest ;;
+        q|*) break ;;
     esac
 done
 clear
