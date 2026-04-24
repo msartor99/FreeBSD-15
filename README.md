@@ -29,7 +29,7 @@ some enhancement and adjustment.
 
 Enjoy!
 
-# new script to switch X11 to Wayland
+# new script to switch X11 to Wayland for Nvidia graphic card
 
 symply, a switch to install wayland after X11 installation.
 
