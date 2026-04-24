@@ -70,12 +70,11 @@ initial_setup() {
     
     pkg install -y bash doas unzip libzip wget git htop neofetch python3 bashtop smartmontools ipmitool nvme-cli btop pciutils
 
+    # Activation de base du noyau Linux (Léger, sans installer tout l'OS Rocky)
     sysrc linux_enable=YES
     kldload linux 2>/dev/null
     kldload linux64 2>/dev/null
     service linux start 2>/dev/null
-    
-    pkg install -y linux-rl9
 
     sed -i '' 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     add_line_if_missing "PermitRootLogin yes" /etc/ssh/sshd_config
@@ -331,6 +330,13 @@ install_nvidia_interactive() {
     local LINUX_LIBS="linux-nvidia-libs"
     [ "$DRIVER_PKG" != "nvidia-driver" ] && LINUX_LIBS="linux-nvidia-libs-$(echo $DRIVER_PKG | cut -d'-' -f3)"
     
+    # 🧠 INTELLIGENCE ARTIFICIELLE : Installation de linux-rl9 requise pour Nvidia
+    if ! pkg info -e linux-rl9 >/dev/null 2>&1; then
+        bsddialog --infobox "NVIDIA detected! Installing Linux compatibility layer (Rocky 9) required for 3D acceleration..." 5 70
+        pkg install -y linux-rl9
+        service linux start 2>/dev/null
+    fi
+
     pkg install -y "$DRIVER_PKG" "$LINUX_LIBS" libc6-shim nvidia-settings nvidia-xconfig
     sysrc kld_list+="nvidia-modeset"
     add_line_if_missing "hw.nvidiadrm.modeset=\"1\"" /boot/loader.conf
@@ -450,37 +456,46 @@ gpu_config() {
     mark_done "2"
 }
 
-# --- NASA THEME (Option 3) ---
+# --- NASA THEME (Option 3 - IDEMPOTENT) ---
 
 nasa_theme() { 
-    bsddialog --infobox "Downloading and configuring NASA Theme..." 5 60
-    [ -d /tmp/fb14_assets ] && rm -rf /tmp/fb14_assets
-    fetch -o /tmp/fb14_assets.zip https://github.com/msartor99/FreeBSD14/archive/refs/heads/main.zip
-    unzip -q /tmp/fb14_assets.zip -d /tmp/; mv /tmp/FreeBSD14-main /tmp/fb14_assets
-    mkdir -p /usr/local/share/sddm/themes/nasa
-    cp -r /usr/local/share/sddm/themes/maldives/* /usr/local/share/sddm/themes/nasa/ 2>/dev/null
-    cp -f /tmp/fb14_assets/Main.qml /usr/local/share/sddm/themes/nasa/
-    cp -f /tmp/fb14_assets/metadata.desktop /usr/local/share/sddm/themes/nasa/
-    cp -f /tmp/fb14_assets/nasa2560login.jpg /usr/local/share/sddm/themes/nasa/background.jpg
-    [ -f /usr/local/share/sddm/themes/nasa/theme.conf ] && sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
-    mkdir -p /usr/local/etc/sddm.conf.d; echo "[Theme]\nCurrent=nasa" > /usr/local/etc/sddm.conf.d/theme.conf
-    mkdir -p /boot/images
-    cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
-    cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
-    cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
-    sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
-    sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
-    [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ] && mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
-    [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ] && mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
-    ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
-    ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
-    sysrc -f /boot/loader.conf loader_color="YES" splash="/boot/images/splash.png" splash_bmp_load="YES" splash_txt_load="YES" splash_pcx_load="YES"
+    if [ -d /usr/local/share/sddm/themes/nasa ]; then
+        bsddialog --infobox "NASA theme already downloaded. Re-applying configuration..." 4 60
+    else
+        bsddialog --infobox "Downloading and configuring NASA Theme..." 5 60
+        [ -d /tmp/fb14_assets ] && rm -rf /tmp/fb14_assets
+        fetch -o /tmp/fb14_assets.zip https://github.com/msartor99/FreeBSD14/archive/refs/heads/main.zip
+        unzip -q /tmp/fb14_assets.zip -d /tmp/; mv /tmp/FreeBSD14-main /tmp/fb14_assets
+        mkdir -p /usr/local/share/sddm/themes/nasa
+        cp -r /usr/local/share/sddm/themes/maldives/* /usr/local/share/sddm/themes/nasa/ 2>/dev/null
+        cp -f /tmp/fb14_assets/Main.qml /usr/local/share/sddm/themes/nasa/
+        cp -f /tmp/fb14_assets/metadata.desktop /usr/local/share/sddm/themes/nasa/
+        cp -f /tmp/fb14_assets/nasa2560login.jpg /usr/local/share/sddm/themes/nasa/background.jpg
+        [ -f /usr/local/share/sddm/themes/nasa/theme.conf ] && sed -i '' 's/^background=.*/background=background.jpg/' /usr/local/share/sddm/themes/nasa/theme.conf
+        
+        mkdir -p /boot/images
+        cp -f /tmp/fb14_assets/freebsd-brand-rev.png /boot/images/nasa-brand.png
+        cp -f /tmp/fb14_assets/freebsd-logo-rev.png /boot/images/nasa-logo.png
+        cp -f /tmp/fb14_assets/nasa1920.png /boot/images/splash.png
+        sysrc -f /boot/loader.conf -x loader_brand 2>/dev/null
+        sysrc -f /boot/loader.conf -x loader_logo 2>/dev/null
+        [ ! -L "/boot/images/freebsd-brand-rev.png" ] && [ -f "/boot/images/freebsd-brand-rev.png" ] && mv -f /boot/images/freebsd-brand-rev.png /boot/images/freebsd-brand-rev.png.bak
+        [ ! -L "/boot/images/freebsd-logo-rev.png" ] && [ -f "/boot/images/freebsd-logo-rev.png" ] && mv -f /boot/images/freebsd-logo-rev.png /boot/images/freebsd-logo-rev.png.bak
+        ln -sf /boot/images/nasa-brand.png /boot/images/freebsd-brand-rev.png
+        ln -sf /boot/images/nasa-logo.png /boot/images/freebsd-logo-rev.png
+        sysrc -f /boot/loader.conf loader_color="YES" splash="/boot/images/splash.png" splash_bmp_load="YES" splash_txt_load="YES" splash_pcx_load="YES"
+    fi
+
+    # Toujours ré-appliquer le thème SDDM pour être sûr
+    mkdir -p /usr/local/etc/sddm.conf.d
+    echo "[Theme]" > /usr/local/etc/sddm.conf.d/theme.conf
+    echo "Current=nasa" >> /usr/local/etc/sddm.conf.d/theme.conf
+    
     mark_done "3"
 }
 
 # --- DESKTOP ENVIRONMENTS ---
 
-# Option 4: Plasma
 macos_plasma_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for KDE Plasma 6...\n(Extracting files globally for all users)" 6 70
     
@@ -561,7 +576,6 @@ plasma_config() {
     mark_done "4"
 }
 
-# Option 5: MATE
 macos_mate_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for MATE & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
     
@@ -579,7 +593,6 @@ macos_mate_theme() {
     [ -d /tmp/WhiteSur-gtk-theme ] && rm -rf /tmp/WhiteSur-gtk-theme
     [ -d /tmp/WhiteSur-icon-theme ] && rm -rf /tmp/WhiteSur-icon-theme
     
-    # 1. GTK Window Theme
     git clone https://github.com/vinceliuice/WhiteSur-gtk-theme.git /tmp/WhiteSur-gtk-theme
     cd /tmp/WhiteSur-gtk-theme
     mkdir -p /usr/local/share/themes
@@ -587,7 +600,6 @@ macos_mate_theme() {
     mkdir -p /usr/local/share/plank/themes
     cp -r src/other/plank/theme-* /usr/local/share/plank/themes/ 2>/dev/null
     
-    # 2. Icon Theme
     git clone https://github.com/vinceliuice/WhiteSur-icon-theme.git /tmp/WhiteSur-icon-theme
     cd /tmp/WhiteSur-icon-theme
     mkdir -p /usr/local/share/icons
@@ -595,11 +607,9 @@ macos_mate_theme() {
     gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur 2>/dev/null
     gtk-update-icon-cache -f -t /usr/local/share/icons/WhiteSur-Dark 2>/dev/null
     
-    # 3. Download Wallpaper
     mkdir -p /usr/local/share/backgrounds
     fetch -o /usr/local/share/backgrounds/WhiteSur-light.jpg https://raw.githubusercontent.com/vinceliuice/WhiteSur-wallpapers/main/4k/WhiteSur-light.jpg
     
-    # 4. SDDM Prompt
     if bsddialog --title "Login Screen (SDDM)" --yesno "Do you want to install the macOS style Login Screen (Sugar-Candy)?\n\nSelect 'No' if you want to keep the NASA theme or the default screen." 10 70; then
         cd /tmp
         fetch -o sugar-candy.zip https://github.com/MarianArlt/sddm-sugar-candy/archive/refs/heads/master.zip
@@ -627,7 +637,6 @@ EOF
     rm -rf /tmp/WhiteSur-gtk-theme /tmp/WhiteSur-icon-theme /tmp/gnu_wrap
     export PATH=$OLD_PATH
     
-    # 5. Autostart Plank Dock specifically for MATE
     mkdir -p /usr/local/etc/xdg/autostart
     cat > /usr/local/etc/xdg/autostart/plank-mate.desktop <<EOF
 [Desktop Entry]
@@ -641,7 +650,6 @@ Categories=Utility;
 OnlyShowIn=MATE;
 EOF
 
-    # 6. MATE First Login Auto-Apply Magic (using gsettings)
     cat > /usr/local/etc/xdg/autostart/whitesur-mate-apply.desktop <<'EOF'
 [Desktop Entry]
 Name=Apply WhiteSur Theme MATE
@@ -667,7 +675,6 @@ mate_config() {
     mark_done "5"
 }
 
-# Option 6: XFCE4
 macos_xfce_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for XFCE4...\n(This might take a moment to fetch from GitHub)" 6 65
     
@@ -786,7 +793,6 @@ EOF
     mark_done "6"
 }
 
-# Option 7: GNOME
 macos_gnome_theme() {
     bsddialog --infobox "Downloading and building WhiteSur macOS Theme for GNOME & SDDM...\n(This might take a moment to fetch from GitHub)" 6 65
     
@@ -886,10 +892,11 @@ EOF
     mark_done "7"
 }
 
-# --- SERVICES & APPS (Options 8 to j) ---
+# --- SERVICES & APPS ---
 
 apps_config() { 
     bsddialog --infobox "Installing Apps & Configuring Webcam..." 5 60
+    # Note : Le navigateur installé est bien 'chromium' (open-source), pas Google Chrome propriétaire !
     pkg install -y firefox chromium thunderbird vlc ffmpeg webcamd ImageMagick7 cantarell-fonts droid-fonts-ttf inconsolata-ttf noto-basic noto-emoji roboto-fonts-ttf ubuntu-font webfonts terminus-font terminus-ttf
     sysrc webcamd_enable="YES"
     ! sysrc -n kld_list | grep -q "cuse" && sysrc kld_list+="cuse"
@@ -953,6 +960,14 @@ EOF
     mark_done "a"
 }
 
+# --- NEW OPTION: LINUX USERLAND ---
+linux_compat_config() {
+    bsddialog --infobox "Installing Rocky Linux 9 Base (Linuxulator)..." 5 60
+    pkg install -y linux-rl9
+    service linux start 2>/dev/null
+    mark_done "b"
+}
+
 wine_config() {
     if grep -q "quarterly" /etc/pkg/FreeBSD.conf; then
         local msg="WARNING: WINE works best on 'latest' branch. Switch now?"
@@ -962,7 +977,7 @@ wine_config() {
             return
         fi
     fi
-    pkg install -y wine winetricks; mark_done "b"
+    pkg install -y wine winetricks; mark_done "c"
 }
 
 samba_config() { 
@@ -995,22 +1010,22 @@ samba_config() {
 EOF
     sysrc samba_server_enable="YES"; service samba_server restart 2>/dev/null
     [ "$SMB_GUEST" = "no" ] && [ -n "$SMB_PASS" ] && (echo "$SMB_PASS"; echo "$SMB_PASS") | smbpasswd -s -a "$SMB_USER"
-    mark_done "c"
+    mark_done "d"
 }
 
 vbox_host_config() {
     is_vbox_guest && return
     pkg install -y virtualbox-ose-72; sysrc -f /boot/loader.conf vboxdrv_load="YES" vboxnet_load="YES"; sysrc vboxnet_enable="YES"
     pw groupmod vboxusers -m root; [ -n "$USER_NAME" ] && pw groupmod vboxusers -m "$USER_NAME"
-    mark_done "d"
+    mark_done "e"
 }
 
 multimedia_config() {
-    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ffmpeg gstreamer1-plugins-all; mark_done "e"
+    pkg install -y gimp inkscape krita blender kdenlive obs-studio audacity ffmpeg gstreamer1-plugins-all; mark_done "f"
 }
 
 development_config() {
-    pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode; mark_done "f"
+    pkg install -y gcc python3 rust gmake cmake pkgconf gdb cgdb neovim vscode; mark_done "g"
 }
 
 macbook_2010_config() {
@@ -1025,14 +1040,14 @@ macbook_2010_config() {
 
     local warn_msg="MACBOOK 2010 POST-INSTALL TIPS:\n\n1. KEYBOARD: This is handled! Just answer YES when Option 1 asks if you are using an Apple Mac keyboard.\n\n2. GPU: Use Option 2 (Auto-Detect GPU) to safely configure your graphics.\n\n3. AUDIO: Run 'cat /dev/sndstat' to find speakers, then set 'sysctl hw.snd.default_unit=X'.\n\n4. WI-FI: Once rebooted, use Option 'w' to configure Wi-Fi."
     bsddialog --msgbox "$warn_msg" 18 75
-    mark_done "g"
+    mark_done "h"
 }
 
 wifi_config() {
     clear
     if [ -x /usr/libexec/bsdinstall/netconfig ]; then
         bsdinstall netconfig
-        mark_done "h"
+        mark_done "i"
     else
         bsddialog --msgbox "Error: The bsdinstall network utility was not found on this system." 6 70
     fi
@@ -1048,13 +1063,13 @@ bluetooth_config() {
     ! sysrc -n kld_list | grep -q "ng_ubt" && sysrc kld_list+="ng_ubt"
     sysrc hcsecd_enable="YES" bthidd_enable="YES" sdpd_enable="YES"
     [ -n "$USER_NAME" ] && pw groupmod network -m "$USER_NAME" 2>/dev/null
-    mark_done "i"
+    mark_done "j"
 }
 
 switch_latest() { 
     local msg="WARNING: Switching to LATEST branch can lead to temporary package breakage or GUI instability. Proceed?"
     if bsddialog --title "DANGER: LATEST Branch" --defaultno --yesno "$msg" 10 70; then
-        sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "j"
+        sed -i '' 's/quarterly/latest/g' /etc/pkg/FreeBSD.conf; pkg update -f && pkg upgrade -y; mark_done "k"
     fi
 }
 
@@ -1075,15 +1090,16 @@ while true; do
         "8" "$(get_label "8" "Basic Apps & Fonts + Webcam Support")" \
         "9" "$(get_label "9" "Remote: XRDP (RDP Desktop Session)")" \
         "a" "$(get_label "a" "Remote: x11vnc (Console Shadowing)")" \
-        "b" "$(get_label "b" "WINE & Winetricks (Needs LATEST)")" \
-        "c" "$(get_label "c" "Samba Server (Interactive Share)")" \
-        "d" "$(get_label "d" "VirtualBox 7.2 Host")" \
-        "e" "$(get_label "e" "Multimedia Creation (GIMP, OBS...)")" \
-        "f" "$(get_label "f" "Dev Tools (GCC, Python, VSCode)")" \
-        "g" "$(get_label "g" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
-        "h" "$(get_label "h" "Wi-Fi Configuration (Native bsdinstall GUI)")" \
-        "i" "$(get_label "i" "Bluetooth Support (WARNING)")" \
-        "j" "$(get_label "j" "Upgrade to LATEST Branch (WARNING)")" \
+        "b" "$(get_label "b" "Linux Userland (Rocky 9 Compatibility)")" \
+        "c" "$(get_label "c" "WINE & Winetricks (Needs LATEST)")" \
+        "d" "$(get_label "d" "Samba Server (Interactive Share)")" \
+        "e" "$(get_label "e" "VirtualBox 7.2 Host")" \
+        "f" "$(get_label "f" "Multimedia Creation (GIMP, OBS...)")" \
+        "g" "$(get_label "g" "Dev Tools (GCC, Python, VSCode)")" \
+        "h" "$(get_label "h" "MacBook Pro 2010 (Wi-Fi, Trackpad, FireWire)")" \
+        "i" "$(get_label "i" "Wi-Fi Configuration (Native bsdinstall GUI)")" \
+        "j" "$(get_label "j" "Bluetooth Support (WARNING)")" \
+        "k" "$(get_label "k" "Upgrade to LATEST Branch (WARNING)")" \
         "q" "Quit" 3>&1 1>&2 2>&3)
 
     case $MAIN_CHOICE in
@@ -1097,15 +1113,16 @@ while true; do
         8) apps_config ;;
         9) xrdp_config ;;
         a) vnc_config ;;
-        b) wine_config ;;
-        c) samba_config ;;
-        d) vbox_host_config ;;
-        e) multimedia_config ;;
-        f) development_config ;;
-        g) macbook_2010_config ;;
-        h) wifi_config ;;
-        i) bluetooth_config ;;
-        j) switch_latest ;;
+        b) linux_compat_config ;;
+        c) wine_config ;;
+        d) samba_config ;;
+        e) vbox_host_config ;;
+        f) multimedia_config ;;
+        g) development_config ;;
+        h) macbook_2010_config ;;
+        i) wifi_config ;;
+        j) bluetooth_config ;;
+        k) switch_latest ;;
         q|*) break ;;
     esac
 done
