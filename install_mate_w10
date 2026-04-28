@@ -1,0 +1,231 @@
+#!/usr/local/bin/bash
+# ==============================================================================
+# MATE DESKTOP INSTALLER (WINDOWS 10 CLONE) - FREEBSD 15
+# Features: SDDM, USB support, NVIDIA drivers, Picom, Panel Direct Injection
+# ==============================================================================
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: Please run this script as root (su -)."
+    exit 1
+fi
+
+# ==============================================================================
+# GLOBAL VARIABLES (Change these to match your region/language)
+# ==============================================================================
+KBD_LAYOUT="ch"
+KBD_VARIANT="fr"
+SYS_LANG="fr_CH.UTF-8"
+LOGIN_CLASS_NAME="customlang"
+# ==============================================================================
+
+# Temporary file for bsddialog
+TMP=$(mktemp /tmp/bsddialog.XXXXXX)
+trap 'rm -f $TMP' EXIT
+
+# --- 0. USER INTERFACE (bsddialog) ---
+bsddialog --clear --title "MATE / WINDOWS 10 INSTALLER" \
+--yesno "WARNING:\n\nThis script will configure your FreeBSD 15 system with a full MATE desktop and a Windows 10 theme.\n\nEverything is included: drivers, kernel optimizations, multimedia codecs, and taskbar fixes.\n\nDo you want to continue?" 14 70
+if [ $? -ne 0 ]; then clear; echo "Installation canceled."; exit 0; fi
+
+# User Selection
+bsddialog --clear --title "User Configuration" \
+--inputbox "Enter the target username (user must already exist):" 10 60 2> $TMP
+if [ $? -ne 0 ]; then clear; echo "Canceled."; exit 1; fi
+MYUSER=$(cat $TMP)
+
+if [ -z "$MYUSER" ] || ! id "$MYUSER" >/dev/null 2>&1; then
+    bsddialog --msgbox "Error: User does not exist. Please create it first using 'adduser'." 10 60; clear; exit 1
+fi
+
+# GPU Detection and Menu
+VGA_INFO=$(pciconf -lv | awk '/class=0x030000/,/subclass/' | grep -E '^[[:space:]]*device[[:space:]]*=' | cut -d"'" -f2 | head -n 1)
+
+bsddialog --clear --title "Video Configuration" \
+--menu "Detected GPU: $VGA_INFO\n\nSelect your graphics vendor:" 15 70 4 "1" "AMD (amdgpu)" "2" "NVIDIA (Proprietary)" "3" "Intel (i915kms)" "4" "Skip / Already configured" 2> $TMP
+if [ $? -ne 0 ]; then clear; echo "Canceled."; exit 1; fi
+GPU_CHOICE=$(cat $TMP)
+
+# NVIDIA Branch Selection
+if [ "$GPU_CHOICE" = "2" ]; then
+    bsddialog --clear --title "NVIDIA Drivers" \
+    --menu "Select your GPU generation:" 15 70 4 "1" "Latest (RTX, GTX 16xx+)" "2" "Legacy 550+ (GTX 10xx, 9xx)" "3" "Legacy 470 (Kepler)" "4" "Legacy 390 (Fermi)" 2> $TMP
+    if [ $? -ne 0 ]; then clear; echo "Canceled."; exit 1; fi
+    NV_VER=$(cat $TMP)
+fi
+
+clear
+echo -e "\033[1;32m=== STARTING AUTOMATED INSTALLATION ===\033[0m"
+
+# --- HELPER FUNCTIONS ---
+add_kmod() { sysrc -n kld_list 2>/dev/null | grep -q "$1" || sysrc kld_list+="$1"; }
+add_loader() { grep -q "^$1" /boot/loader.conf || echo "$1" >> /boot/loader.conf; }
+add_sysctl() { grep -q "^$1" /etc/sysctl.conf || echo "$1" >> /etc/sysctl.conf; }
+add_fstab() { grep -q "$3" /etc/fstab || echo "$1 $2 $3 $4 $5 $6" >> /etc/fstab; }
+
+# --- 1. PACKAGES INSTALLATION ---
+echo "Installing system packages and utilities..."
+pkg install -y xorg sddm seatd dbus avahi mate mate-utils mate-terminal dconf brisk-menu picom \
+    firefox claws-mail vlc libreoffice octopkg cups gutenprint cups-filters hplip system-config-printer \
+    fusefs-ntfs fusefs-ext2 fusefs-hfsfuse pulseaudio pipewire wireplumber gstreamer1-plugins-all \
+    ffmpeg libva-vdpau-driver libva-utils libdvdread libdvdnav libbluray multimedia/mpv \
+    git wget unzip libzip bash xprop pciutils xdg-user-dirs signal-cli doas htop neofetch \
+    python3 bashtop smartmontools qt5-graphicaleffects qt5-quickcontrols2
+
+# --- 2. KERNEL OPTIMIZATIONS & QUIET BOOT ---
+echo "Applying kernel and boot optimizations..."
+add_loader "boot_mute=YES"
+add_loader "autoboot_delay=3"
+add_loader "tmpfs_load=YES"
+add_loader "aio_load=YES"
+sysrc splash_changer_enable="YES"
+sysrc rc_startmsgs="NO"
+sed -i '' 's/run_rc_script ${_rc_elem} ${_boot}/run_rc_script ${_rc_elem} ${_boot} > \/dev\/null/g' /etc/rc
+add_sysctl "kern.sched.preempt_thresh=224"
+add_sysctl "kern.ipc.shm_allow_removed=1"
+add_sysctl "vfs.usermount=1"
+
+# --- 3. GRAPHICS CONFIGURATION ---
+echo "Configuring graphics drivers..."
+case $GPU_CHOICE in
+    2)
+        case $NV_VER in 2) P="nvidia-driver-550";; 3) P="nvidia-driver-470";; 4) P="nvidia-driver-390";; *) P="nvidia-driver";; esac
+        pkg install -y $P linux-nvidia-libs nvidia-xconfig nvidia-settings libc6-shim
+        sysrc linux_enable="YES"; add_kmod "linux"; add_kmod "nvidia-modeset"
+        add_loader 'hw.nvidiadrm.modeset="1"'; nvidia-xconfig ;;
+    3) pkg install -y drm-kmod; add_kmod "/boot/modules/i915kms.ko" ;;
+    1) pkg install -y drm-kmod; add_kmod "/boot/modules/amdgpu.ko" ;;
+esac
+add_kmod "fusefs"; add_kmod "ext2fs"
+
+# --- 4. SERVICES & MOUNTS ---
+echo "Enabling services..."
+sysrc dbus_enable="YES"; sysrc seatd_enable="YES"; sysrc avahi_enable="YES"; sysrc sddm_enable="YES"
+sysrc cupsd_enable="YES"; sysrc devfs_system_ruleset="localrules"
+add_fstab "proc" "/proc" "procfs" "rw" "0" "0"
+add_fstab "fdesc" "/dev/fd" "fdescfs" "rw" "0" "0"
+mount -a
+
+# --- 5. DEVFS & KEYBOARD RULES ---
+if ! grep -q "\[localrules=5\]" /etc/devfs.rules 2>/dev/null; then
+cat >> /etc/devfs.rules << 'EOF'
+[localrules=5]
+add path 'da*' mode 0660 group operator
+add path 'cd*' mode 0660 group operator
+add path 'usb/*' mode 0660 group operator
+add path 'unlpt*' mode 0660 group cups
+EOF
+fi
+service devfs restart
+
+mkdir -p /usr/local/etc/X11/xorg.conf.d
+cat > /usr/local/etc/X11/xorg.conf.d/20-keyboards.conf << EOF
+Section "InputClass"
+    Identifier "All Keyboards"
+    MatchIsKeyboard "yes"
+    Option "XkbLayout" "$KBD_LAYOUT"
+    Option "XkbVariant" "$KBD_VARIANT"
+EndSection
+EOF
+
+# --- 6. LOCALIZATION (LOGIN CLASS) ---
+sed -i '' "/$LOGIN_CLASS_NAME|/,/:tc=default:/d" /etc/login.conf 2>/dev/null
+cat >> /etc/login.conf << EOF
+$LOGIN_CLASS_NAME|Custom Language Accounts:\
+	:charset=UTF-8:lang=$SYS_LANG:tc=default:
+EOF
+cap_mkdb /etc/login.conf
+
+# --- 7. THEMES & SDDM PATCHING ---
+echo "Downloading Windows 10 themes and assets..."
+mkdir -p /usr/local/share/themes /usr/local/share/icons /usr/local/share/sddm/themes
+[ -d "/usr/local/share/themes/Windows-10" ] || (git clone https://github.com/B00merang-Project/Windows-10.git /tmp/W10 && mv /tmp/W10 /usr/local/share/themes/Windows-10)
+[ -d "/usr/local/share/icons/Windows-10-Icons" ] || (git clone https://github.com/B00merang-Project/Windows-10-Icons.git /tmp/W10I && mv /tmp/W10I /usr/local/share/icons/Windows-10-Icons)
+[ -d "/usr/local/share/sddm/themes/win10-sddm-theme" ] || (git clone https://github.com/syrupderg/win10-sddm-theme.git /tmp/S10 && mv /tmp/S10 /usr/local/share/sddm/themes/win10-sddm-theme)
+
+# Fix SDDM crashing due to missing VirtualKeyboard module on FreeBSD
+find /usr/local/share/sddm/themes/win10-sddm-theme -name "*.qml" -exec sed -i '' '/import QtQuick.VirtualKeyboard/d; s/InputPanel/Item/g' {} +
+echo -e "[Theme]\nCurrent=win10-sddm-theme" > /usr/local/etc/sddm.conf
+
+# --- 8. USER CONFIGURATION & DIRECT INJECTION ---
+echo "Configuring user settings..."
+pw usermod "$MYUSER" -G wheel,operator,video,cups -L $LOGIN_CLASS_NAME
+WALLPAPER_DIR="/usr/local/share/wallpapers"; mkdir -p $WALLPAPER_DIR
+wget -qO $WALLPAPER_DIR/windows10.jpg --user-agent="Mozilla/5.0" "https://wallpaperaccess.com/full/1385374.jpg"
+chown -R "$MYUSER" $WALLPAPER_DIR
+
+# Set up Picom autostart for transparency and shadows
+mkdir -p /home/"$MYUSER"/.config/autostart
+cat > /home/"$MYUSER"/.config/autostart/picom.desktop << EOF
+[Desktop Entry]
+Type=Application
+Exec=picom -b --backend xrender
+Name=Picom
+EOF
+
+# FIRST LOGIN SCRIPT (MATE UI INJECTION)
+cat > /home/"$MYUSER"/.scripts/apply_windows_look.sh << EOF
+#!/bin/sh
+sleep 5
+
+# 1. Total reset to avoid layout conflicts
+gsettings reset-recursively org.mate.panel
+killall mate-panel
+
+# 2. General Theme Configuration
+gsettings set org.mate.interface gtk-theme 'Windows-10'
+gsettings set org.mate.interface icon-theme 'Windows-10-Icons'
+gsettings set org.mate.background picture-filename '$WALLPAPER_DIR/windows10.jpg'
+gsettings set org.mate.Marco.general compositing-manager false
+
+# 3. MATE Panel Direct Injection (Windows 10 Style)
+gsettings set org.mate.panel general toplevel-id-list "['bottom']"
+
+PATH_PANEL="org.mate.panel.toplevel:/org/mate/panel/toplevels/bottom/"
+gsettings set \$PATH_PANEL orientation 'bottom'
+gsettings set \$PATH_PANEL size 40
+gsettings set \$PATH_PANEL background-type 'color'
+gsettings set \$PATH_PANEL background-color 'rgba(30,30,30,0.95)'
+
+gsettings set org.mate.panel general object-id-list "['menu', 'window-list', 'notification-area', 'clock']"
+
+gsettings set org.mate.panel.object:/org/mate/panel/objects/menu/ object-type 'applet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/menu/ toplevel-id 'bottom'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/menu/ applet-iid 'BriskMenuFactory::BriskMenu'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/menu/ position 0
+
+gsettings set org.mate.panel.object:/org/mate/panel/objects/window-list/ object-type 'applet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/window-list/ toplevel-id 'bottom'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/window-list/ applet-iid 'WnckletFactory::WindowListApplet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/window-list/ position 1
+
+gsettings set org.mate.panel.object:/org/mate/panel/objects/notification-area/ object-type 'applet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/notification-area/ toplevel-id 'bottom'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/notification-area/ applet-iid 'NotificationAreaAppletFactory::NotificationArea'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/notification-area/ pack-type 'end'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/notification-area/ position 1
+
+gsettings set org.mate.panel.object:/org/mate/panel/objects/clock/ object-type 'applet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/clock/ toplevel-id 'bottom'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/clock/ applet-iid 'ClockAppletFactory::ClockApplet'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/clock/ pack-type 'end'
+gsettings set org.mate.panel.object:/org/mate/panel/objects/clock/ position 0
+
+# 4. Final launch
+mate-panel &
+
+# Self-destruct the autostart trigger
+rm -f /home/$MYUSER/.config/autostart/apply_windows_look.desktop
+EOF
+chmod +x /home/"$MYUSER"/.scripts/apply_windows_look.sh
+
+cat > /home/"$MYUSER"/.config/autostart/apply_windows_look.desktop << EOF
+[Desktop Entry]
+Type=Application
+Exec=/home/$MYUSER/.scripts/apply_windows_look.sh
+Name=WindowsThemeSetup
+EOF
+
+chown -R "$MYUSER":"$MYUSER" /home/"$MYUSER"/.scripts /home/"$MYUSER"/.config
+
+bsddialog --title "SUCCESS" --msgbox "Installation complete.\n\nThe system is ready. The user's desktop will automatically apply the Windows 10 theme upon first login.\n\nPlease reboot your system." 10 50; clear
+echo -e "\033[1;32mInstallation finished. Please type 'reboot' to apply kernel changes.\033[0m"
