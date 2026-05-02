@@ -39,3 +39,7 @@ switch_to_wayland.sh
 
 # new script to install mwm and all configuration theme for IRIX clone
 
+install_irix_clone.sh
+
+Enjoy !
+
