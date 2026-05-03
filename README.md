@@ -43,3 +43,9 @@ install_irix_clone.sh
 
 Enjoy !
 
+
+# new script to install mwm and all configuration theme for SCO Unix clone
+
+install_sco_theme.sh
+
+Enjoy !
