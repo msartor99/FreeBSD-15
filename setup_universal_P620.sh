@@ -201,8 +201,17 @@ if [ "$INSTALL_AQUANTIA" = "YES" ]; then
     git clone https://github.com/msartor99/FreeBSD15-aquantia-P620 /root/aquantia_p620_src
     cd /root/aquantia_p620_src
     sh install_aq_fbsd15_universal.sh
-    sysrc -f /boot/loader.conf dev.aq.0.iflib.override_nrxqs="8"
-    sysrc -f /boot/loader.conf dev.aq.0.iflib.override_ntxqs="8"
+    
+    echo "-> Applying Aquantia PHY fix to /boot/loader.conf..."
+    # Remplacement du sysrc par grep/sed pour gérer les points dans les noms de variables
+    for AQ_VAR in "nrxqs" "ntxqs"; do
+        if grep -q "^dev.aq.0.iflib.override_${AQ_VAR}=" /boot/loader.conf 2>/dev/null; then
+            sed -i '' "s/^dev.aq.0.iflib.override_${AQ_VAR}=.*/dev.aq.0.iflib.override_${AQ_VAR}=\"8\"/" /boot/loader.conf
+        else
+            echo "dev.aq.0.iflib.override_${AQ_VAR}=\"8\"" >> /boot/loader.conf
+        fi
+    done
+    
     echo "-> Aquantia driver successfully installed and configured."
 else
     echo "-> Skipped (Aquantia installation not selected)."
