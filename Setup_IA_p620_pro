@@ -1,0 +1,136 @@
+#!/bin/bash
+# ==============================================================================
+# STATION IA & INGÉNIERIE - LENOVO P620 (1x 2TB SSD / 2x RTX A4000)
+# Déploiement avec Interface TUI (Whiptail) - Résilience Réseau & Fix NVIDIA
+# ==============================================================================
+set -e
+
+# Identification de l'utilisateur réel
+if [ -n "$SUDO_USER" ]; then
+    REAL_USER="$SUDO_USER"
+else
+    REAL_USER="$(whoami)"
+fi
+
+# --- 1. GOUVERNANCE ET RESPONSABILITÉ ---
+MSG_RESPONSABILITE="Ce script configure une station de calcul haute performance avec IA.\n\nL'Intelligence Artificielle est un outil d'assistance. L'ingénieur reste l'unique responsable de la validation des notes de calculs, du dimensionnement et de l'interprétation des normes (SIA/Eurocodes).\n\nAcceptez-vous ces conditions d'utilisation ?"
+
+if ! whiptail --title "AVERTISSEMENT DE RESPONSABILITÉ" --yesno "$MSG_RESPONSABILITE" 15 70; then
+    clear
+    echo "Installation annulée par l'opérateur."
+    exit 1
+fi
+
+# --- 2. IDENTIFICATION DE L'UTILISATEUR ---
+NOM_INGENIEUR=$(whiptail --title "PROFIL UTILISATEUR" --inputbox "Entrez le nom ou l'identifiant de l'ingénieur/utilisateur :" 10 60 3>&1 1>&2 2>&3)
+
+if [ $? -ne 0 ] || [ -z "$NOM_INGENIEUR" ]; then
+    clear
+    echo "Opération annulée. Nom d'utilisateur requis."
+    exit 1
+fi
+
+# --- 3. CHOIX DU PROFIL MÉTIER ---
+CHOIX_IA=$(whiptail --title "CONFIGURATION DE L'INTELLIGENCE ARTIFICIELLE" --menu "Quel modèle métier souhaitez-vous précharger sur les RTX A4000 ?" 15 75 4 \
+"1" "Géotechnique (Analyse de sols - Llama-3.1 8B)" \
+"2" "Structure (Béton, Acier - Gemma-2 27B)" \
+"3" "Infrastructure IT (Réseau, Ansible - CodeLlama 13B)" \
+"4" "Déploiement Complet (Les 3 profils)" 3>&1 1>&2 2>&3)
+
+if [ $? -ne 0 ]; then
+    clear
+    echo "Opération annulée."
+    exit 1
+fi
+
+clear
+echo "========================================================================="
+echo " DÉMARRAGE DE L'INSTALLATION POUR : $NOM_INGENIEUR"
+echo " Modèle IA sélectionné : Option $CHOIX_IA"
+echo "========================================================================="
+sleep 2
+
+echo "--- [1/7] RÉGIONALISATION & CLAVIER ---"
+localectl set-x11-keymap ch pc105 fr || true
+
+echo "--- [2/7] MISE À JOUR ET OUTILS MÉTIERS (KDE & ANSIBLE) ---"
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y sddm kde-standard firefox vlc git curl build-essential \
+                    libreoffice libreoffice-l10n-fr ark okular udisks2 \
+                    ansible nmap python3-pip
+pip install pywinrm --break-system-packages
+
+echo "--- [3/7] PILOTES NVIDIA ET FIX NOUVEAU ---"
+# Création de la règle de blacklist pour tuer le conflit "nouveau" à la racine
+if [ ! -f /etc/modprobe.d/blacklist-nouveau.conf ]; then
+    echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf > /dev/null
+    echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/blacklist-nouveau.conf > /dev/null
+    sudo update-initramfs -u
+fi
+
+if ! nvidia-smi > /dev/null 2>&1; then
+    sudo ubuntu-drivers install
+else
+    echo "Drivers NVIDIA déjà opérationnels."
+fi
+
+echo "--- [4/7] DOCKER ET ACCÉLÉRATION GPU ---"
+if ! command -v docker > /dev/null 2>&1; then
+    sudo apt install -y docker.io
+fi
+sudo systemctl enable --now docker
+
+if [ ! -f /etc/apt/sources.list.d/nvidia-container-toolkit.list ]; then
+    curl -4 --retry 3 -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    curl -4 --retry 3 -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+    sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+    sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    sudo apt update
+    sudo apt install -y nvidia-container-toolkit
+    sudo systemctl restart docker
+fi
+
+echo "--- [5/7] MOTEUR IA ET TÉLÉCHARGEMENT ---"
+if ! command -v ollama > /dev/null 2>&1; then
+    curl -4 --retry 3 -fsSL https://ollama.com/install.sh | sh
+    sleep 5
+else
+    echo "Ollama est déjà prêt."
+fi
+
+DOSSIER_TRAVAIL="/home/$REAL_USER/Documents/Mandats_$NOM_INGENIEUR"
+sudo -u "$REAL_USER" mkdir -p "$DOSSIER_TRAVAIL"
+
+case $CHOIX_IA in
+    1) ollama pull llama3.1:8b; sudo -u "$REAL_USER" mkdir -p "$DOSSIER_TRAVAIL/Geotechnique" ;;
+    2) ollama pull gemma2:27b; sudo -u "$REAL_USER" mkdir -p "$DOSSIER_TRAVAIL/Structure" ;;
+    3) ollama pull codellama:13b; sudo -u "$REAL_USER" mkdir -p "$DOSSIER_TRAVAIL/IT_Reseau" ;;
+    4)
+        ollama pull llama3.1:8b; ollama pull gemma2:27b; ollama pull codellama:13b
+        sudo -u "$REAL_USER" mkdir -p "$DOSSIER_TRAVAIL/Geotechnique" "$DOSSIER_TRAVAIL/Structure" "$DOSSIER_TRAVAIL/IT_Reseau"
+        ;;
+esac
+
+echo "--- [6/7] INTERFACE PROMPT (OPEN WEBUI) ---"
+if [ "$(sudo docker ps -aq -f name=open-webui)" ]; then
+    sudo docker stop open-webui > /dev/null
+    sudo docker rm open-webui > /dev/null
+fi
+sudo docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main
+
+echo "--- [7/7] ACCÈS À DISTANCE (MICROSOFT RDP) ---"
+if ! command -v xrdp > /dev/null 2>&1; then
+    sudo apt install -y xrdp
+fi
+sudo adduser "$REAL_USER" ssl-cert || true
+sudo -u "$REAL_USER" bash -c 'echo "startplasma-x11" > ~/.xsession'
+sudo systemctl enable --now xrdp
+
+# --- MESSAGE DE FIN ---
+MSG_FIN="DÉPLOIEMENT TERMINÉ AVEC SUCCÈS POUR : $NOM_INGENIEUR\n\n1. Cliquez sur OK pour redémarrer la machine.\n2. Connexion distante via 'Connexion Bureau à distance' Windows.\n3. Interface IA locale : http://localhost:3000"
+
+whiptail --title "INSTALLATION TERMINÉE" --msgbox "$MSG_FIN" 12 70
+
+clear
+echo "Redémarrage du système..."
+sudo reboot
