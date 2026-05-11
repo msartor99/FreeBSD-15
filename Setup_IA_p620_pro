@@ -104,8 +104,11 @@ GH_RAW="https://raw.githubusercontent.com/msartor99/FreeBSD14/3887f2d7ef170978b8
 
 sudo curl -fsSL "$GH_RAW/Main.qml" -o /usr/share/sddm/themes/nasa/Main.qml
 sudo curl -fsSL "$GH_RAW/metadata.desktop" -o /usr/share/sddm/themes/nasa/metadata.desktop
-sudo curl -fsSL "$GH_RAW/nasa2560login.jpg" -o /usr/share/sddm/themes/nasa/nasa2560login.jpg
+sudo curl -fsSL "$GH_RAW/nasa2560login.png" -o /usr/share/sddm/themes/nasa/nasa2560login.png
 sudo curl -fsSL "$GH_RAW/theme.conf" -o /usr/share/sddm/themes/nasa/theme.conf
+
+# FIX FOND D'ÉCRAN : On force theme.conf à pointer sur notre image NASA
+sudo sed -i 's|^background=.*|background=nasa2560login.png|' /usr/share/sddm/themes/nasa/theme.conf
 
 sudo chmod 644 /usr/share/sddm/themes/nasa/*
 
@@ -295,10 +298,14 @@ fi
 
 # Compilation propre de l'image de pré-démarrage sans l'erreur Dracut '-e'
 sudo update-grub
-sudo update-initramfs -u
+if command -v dracut &> /dev/null; then
+    sudo dracut --force
+else
+    sudo update-initramfs -u
+fi
 
 # --- DEMANDE DE REDÉMARRAGE FINALE ---
-MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Nettoyage du bug noyau effectué.\n- Thème SDDM 'NASA' installé.\n- Écran Splash NASA configuré.\n- Configuration 100% X11.\n\nVoulez-vous redémarrer maintenant ?"
+MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Nettoyage du bug noyau effectué.\n- Thème SDDM 'NASA' installé (fond d'écran validé).\n- Écran Splash NASA configuré.\n- Configuration 100% X11.\n\nVoulez-vous redémarrer maintenant ?"
 
 if whiptail --title "SUCCÈS" --yesno "$MSG_FIN" 15 70; then
     clear
