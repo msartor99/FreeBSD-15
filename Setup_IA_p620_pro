@@ -163,9 +163,11 @@ if ! grep -q "nvidia-drm.modeset=1" /etc/default/grub; then
     sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="nvidia-drm.modeset=1 /' /etc/default/grub
 fi
 
-if ! grep -q "nvidia_drm" /etc/modules; then
-    echo -e "nvidia\nnvidia_modeset\nnvidia_uvm\nnvidia_drm" | sudo tee -a /etc/modules > /dev/null
-fi
+# FIX : Configuration correcte pour Dracut (Early KMS NVIDIA)
+sudo mkdir -p /etc/dracut.conf.d
+cat <<EOF | sudo tee /etc/dracut.conf.d/nvidia.conf > /dev/null
+add_drivers+=" nvidia nvidia_modeset nvidia_uvm nvidia_drm "
+EOF
 
 echo "--- [7/11] DOCKER ET ACCÉLÉRATION GPU ---"
 if ! command -v docker > /dev/null 2>&1; then
@@ -288,8 +290,14 @@ if ! grep -q "splash" /etc/default/grub; then
 fi
 
 # Compilation de l'image de pré-démarrage (Initramfs)
+# Note: On appelle la commande dracut directement si elle est présente pour s'assurer que l'image est générée.
 sudo update-grub
-sudo update-initramfs -u
+if command -v dracut &> /dev/null; then
+    sudo dracut --force
+else
+    sudo update-initramfs -u
+fi
+
 
 # --- DEMANDE DE REDÉMARRAGE FINALE ---
 MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Thème SDDM 'NASA' installé.\n- Écran de démarrage (Splash) NASA configuré.\n- Configuration 100% X11 appliquée.\n- Automount USB activé.\n\nVoulez-vous redémarrer maintenant ?"
