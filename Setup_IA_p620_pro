@@ -172,14 +172,22 @@ if whiptail --title "SÉCURITÉ ROOT" --yesno "Voulez-vous définir un mot de pa
         fi
     done
 fi
-# Réactivation de l'arrêt sur erreur
+
+# --- DEMANDE DE REDÉMARRAGE FINALE ---
+MSG_FIN="DÉPLOIEMENT TERMINÉ AVEC SUCCÈS POUR : $NOM_INGENIEUR\n\n1. Raccourci de secours activé : Ctrl+Alt+Backspace.\n2. Interface IA accessible sur http://localhost:3000\n\nVoulez-vous redémarrer le système maintenant pour appliquer toutes les modifications (NVIDIA, SDDM, etc.) ?"
+
+if whiptail --title "INSTALLATION TERMINÉE - REDÉMARRAGE" --yesno "$MSG_FIN" 14 75; then
+    clear
+    echo "Redémarrage du système..."
+    sudo reboot
+else
+    clear
+    echo "========================================================================="
+    echo " Redémarrage ignoré."
+    echo " N'oubliez pas de redémarrer manuellement (sudo reboot) plus tard pour"
+    echo " activer l'accélération matérielle NVIDIA et l'interface graphique."
+    echo "========================================================================="
+fi
+
+# Réactivation de l'arrêt sur erreur (bonne pratique pour terminer)
 set -e
-
-# --- MESSAGE DE FIN ---
-MSG_FIN="DÉPLOIEMENT TERMINÉ AVEC SUCCÈS POUR : $NOM_INGENIEUR\n\n1. Cliquez sur OK pour redémarrer.\n2. Raccourci de secours activé : Ctrl+Alt+Backspace.\n3. Interface IA accessible sur http://localhost:3000"
-
-whiptail --title "INSTALLATION TERMINÉE" --msgbox "$MSG_FIN" 12 70
-
-clear
-echo "Redémarrage du système..."
-sudo reboot
