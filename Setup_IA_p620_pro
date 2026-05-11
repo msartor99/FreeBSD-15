@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # STATION IA & INGÉNIERIE - LENOVO P620 (1x 2TB SSD / 2x RTX A4000)
-# Déploiement TUI - PUR X11, ZAPPING, AUTOMOUNT, THÈME SDDM & SPLASH PLYMOUTH
+# Déploiement TUI - PUR X11, ZAPPING, AUTOMOUNT, THÈME NASA & AUTO-CLEANUP
 # ==============================================================================
 set -e
 
@@ -163,6 +163,10 @@ if ! grep -q "nvidia-drm.modeset=1" /etc/default/grub; then
     sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="nvidia-drm.modeset=1 /' /etc/default/grub
 fi
 
+# AUTO-GUÉRISON : Nettoyage du fichier /etc/modules corrompu par de précédentes exécutions en 'sh'
+sudo sed -i '/nvidia/d' /etc/modules || true
+sudo sed -i '/-e/d' /etc/modules || true
+
 # FIX : Configuration correcte pour Dracut (Early KMS NVIDIA)
 sudo mkdir -p /etc/dracut.conf.d
 cat <<EOF | sudo tee /etc/dracut.conf.d/nvidia.conf > /dev/null
@@ -289,18 +293,12 @@ if ! grep -q "splash" /etc/default/grub; then
     sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="splash /' /etc/default/grub
 fi
 
-# Compilation de l'image de pré-démarrage (Initramfs)
-# Note: On appelle la commande dracut directement si elle est présente pour s'assurer que l'image est générée.
+# Compilation propre de l'image de pré-démarrage sans l'erreur Dracut '-e'
 sudo update-grub
-if command -v dracut &> /dev/null; then
-    sudo dracut --force
-else
-    sudo update-initramfs -u
-fi
-
+sudo update-initramfs -u
 
 # --- DEMANDE DE REDÉMARRAGE FINALE ---
-MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Thème SDDM 'NASA' installé.\n- Écran de démarrage (Splash) NASA configuré.\n- Configuration 100% X11 appliquée.\n- Automount USB activé.\n\nVoulez-vous redémarrer maintenant ?"
+MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Nettoyage du bug noyau effectué.\n- Thème SDDM 'NASA' installé.\n- Écran Splash NASA configuré.\n- Configuration 100% X11.\n\nVoulez-vous redémarrer maintenant ?"
 
 if whiptail --title "SUCCÈS" --yesno "$MSG_FIN" 15 70; then
     clear
