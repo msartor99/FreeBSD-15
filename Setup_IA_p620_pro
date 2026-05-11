@@ -1,7 +1,7 @@
 #!/bin/bash
 # ==============================================================================
 # STATION IA & INGÉNIERIE - LENOVO P620 (1x 2TB SSD / 2x RTX A4000)
-# Déploiement avec Interface TUI (Whiptail) - Résilience Réseau & Fix NVIDIA
+# Déploiement avec Interface TUI - Upgrade, SSH Root, Zapping X11 & Password
 # ==============================================================================
 set -e
 
@@ -50,22 +50,32 @@ echo " Modèle IA sélectionné : Option $CHOIX_IA"
 echo "========================================================================="
 sleep 2
 
-echo "--- [1/7] RÉGIONALISATION & CLAVIER ---"
-localectl set-x11-keymap ch pc105 fr || true
+echo "--- [1/9] RÉGIONALISATION, CLAVIER & ZAPPING X11 ---"
+localectl set-x11-keymap ch pc105 fr terminate:ctrl_alt_bksp || true
 
-echo "--- [2/7] MISE À JOUR ET OUTILS MÉTIERS (KDE & ANSIBLE) ---"
-sudo apt update && sudo apt upgrade -y
+echo "--- [2/9] MISE À JOUR SYSTÈME PROFONDE ET OUTILS ---"
+sudo apt update
+sudo apt full-upgrade -y
+sudo apt autoremove -y
+
+# Ajout de openssh-server pour garantir la gestion distante
 sudo apt install -y sddm kde-standard firefox vlc git curl build-essential \
                     libreoffice libreoffice-l10n-fr ark okular udisks2 \
-                    ansible nmap python3-pip
+                    ansible nmap python3-pip openssh-server
 pip install pywinrm --break-system-packages
 
-echo "--- [3/7] PILOTES NVIDIA ET FIX NOUVEAU ---"
-# Création de la règle de blacklist pour tuer le conflit "nouveau" à la racine
+# Autorisation de la connexion SSH en tant que Root
+sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+
+# FIX : Forcer SDDM à utiliser le thème Breeze pour éviter l'écran blanc
+sudo mkdir -p /etc/sddm.conf.d
+echo -e "[Theme]\nCurrent=breeze" | sudo tee /etc/sddm.conf.d/theme.conf > /dev/null
+
+echo "--- [3/9] PILOTES NVIDIA ET FIX NOUVEAU ---"
 if [ ! -f /etc/modprobe.d/blacklist-nouveau.conf ]; then
     echo "blacklist nouveau" | sudo tee /etc/modprobe.d/blacklist-nouveau.conf > /dev/null
     echo "options nouveau modeset=0" | sudo tee -a /etc/modprobe.d/blacklist-nouveau.conf > /dev/null
-    sudo update-initramfs -u
 fi
 
 if ! nvidia-smi > /dev/null 2>&1; then
@@ -74,7 +84,14 @@ else
     echo "Drivers NVIDIA déjà opérationnels."
 fi
 
-echo "--- [4/7] DOCKER ET ACCÉLÉRATION GPU ---"
+echo "--- [4/9] OPTIMISATION AFFICHAGE NVIDIA (DRM MODESET) ---"
+if ! grep -q "nvidia-drm.modeset=1" /etc/default/grub; then
+    sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="/GRUB_CMDLINE_LINUX_DEFAULT="nvidia-drm.modeset=1 /' /etc/default/grub
+    sudo update-grub
+    sudo update-initramfs -u
+fi
+
+echo "--- [5/9] DOCKER ET ACCÉLÉRATION GPU ---"
 if ! command -v docker > /dev/null 2>&1; then
     sudo apt install -y docker.io
 fi
@@ -90,7 +107,7 @@ if [ ! -f /etc/apt/sources.list.d/nvidia-container-toolkit.list ]; then
     sudo systemctl restart docker
 fi
 
-echo "--- [5/7] MOTEUR IA ET TÉLÉCHARGEMENT ---"
+echo "--- [6/9] MOTEUR IA ET TÉLÉCHARGEMENT ---"
 if ! command -v ollama > /dev/null 2>&1; then
     curl -4 --retry 3 -fsSL https://ollama.com/install.sh | sh
     sleep 5
@@ -111,14 +128,17 @@ case $CHOIX_IA in
         ;;
 esac
 
-echo "--- [6/7] INTERFACE PROMPT (OPEN WEBUI) ---"
+echo "--- [7/9] INTERFACE PROMPT (OPEN WEBUI) ---"
+echo "Veuillez patienter pendant le téléchargement de l'interface visuelle (Ne faites pas Ctrl+C)..."
+sudo docker pull ghcr.io/open-webui/open-webui:main
+
 if [ "$(sudo docker ps -aq -f name=open-webui)" ]; then
     sudo docker stop open-webui > /dev/null
     sudo docker rm open-webui > /dev/null
 fi
 sudo docker run -d -p 3000:8080 --add-host=host.docker.internal:host-gateway -v open-webui:/app/data --name open-webui --restart always ghcr.io/open-webui/open-webui:main
 
-echo "--- [7/7] ACCÈS À DISTANCE (MICROSOFT RDP) ---"
+echo "--- [8/9] ACCÈS À DISTANCE (MICROSOFT RDP) ---"
 if ! command -v xrdp > /dev/null 2>&1; then
     sudo apt install -y xrdp
 fi
@@ -126,8 +146,37 @@ sudo adduser "$REAL_USER" ssl-cert || true
 sudo -u "$REAL_USER" bash -c 'echo "startplasma-x11" > ~/.xsession'
 sudo systemctl enable --now xrdp
 
+echo "--- [9/9] SÉCURISATION DU COMPTE ROOT ---"
+# Désactivation temporaire de l'arrêt sur erreur pour gérer correctement la boucle Whiptail
+set +e
+if whiptail --title "SÉCURITÉ ROOT" --yesno "Voulez-vous définir un mot de passe pour le compte 'root' maintenant ?\n\n(Fortement recommandé puisque l'accès SSH Root a été activé)" 12 70; then
+    while true; do
+        ROOT_PW=$(whiptail --title "MOT DE PASSE ROOT" --passwordbox "Entrez le nouveau mot de passe pour root :" 10 60 3>&1 1>&2 2>&3)
+        if [ $? -ne 0 ]; then
+            whiptail --title "ANNULATION" --msgbox "Configuration du mot de passe root ignorée." 8 50
+            break
+        fi
+        
+        ROOT_PW_CONFIRM=$(whiptail --title "CONFIRMATION" --passwordbox "Confirmez le mot de passe :" 10 60 3>&1 1>&2 2>&3)
+        if [ $? -ne 0 ]; then
+            whiptail --title "ANNULATION" --msgbox "Configuration du mot de passe root ignorée." 8 50
+            break
+        fi
+        
+        if [ "$ROOT_PW" = "$ROOT_PW_CONFIRM" ] && [ -n "$ROOT_PW" ]; then
+            echo "root:$ROOT_PW" | sudo chpasswd
+            whiptail --title "SUCCÈS" --msgbox "Le mot de passe root a été mis à jour avec succès." 8 50
+            break
+        else
+            whiptail --title "ERREUR" --msgbox "Les mots de passe ne correspondent pas ou sont vides. Veuillez réessayer." 8 60
+        fi
+    done
+fi
+# Réactivation de l'arrêt sur erreur
+set -e
+
 # --- MESSAGE DE FIN ---
-MSG_FIN="DÉPLOIEMENT TERMINÉ AVEC SUCCÈS POUR : $NOM_INGENIEUR\n\n1. Cliquez sur OK pour redémarrer la machine.\n2. Connexion distante via 'Connexion Bureau à distance' Windows.\n3. Interface IA locale : http://localhost:3000"
+MSG_FIN="DÉPLOIEMENT TERMINÉ AVEC SUCCÈS POUR : $NOM_INGENIEUR\n\n1. Cliquez sur OK pour redémarrer.\n2. Raccourci de secours activé : Ctrl+Alt+Backspace.\n3. Interface IA accessible sur http://localhost:3000"
 
 whiptail --title "INSTALLATION TERMINÉE" --msgbox "$MSG_FIN" 12 70
 
