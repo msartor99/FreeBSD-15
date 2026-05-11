@@ -95,6 +95,10 @@ sudo apt install -y sddm sddm-theme-breeze sddm-theme-maldives kde-standard \
                     plymouth plymouth-themes
 pip install pywinrm --break-system-packages
 
+# ERADICATION DU CLAVIER VIRTUEL : Inutile sur station de travail
+sudo apt purge -y qml-module-qtquick-virtualkeyboard qml6-module-qtquick-virtualkeyboard maliit-keyboard || true
+sudo apt autoremove -y
+
 # CLONAGE ET DÉPLOIEMENT DU THÈME "NASA"
 echo "Déploiement du thème SDDM NASA depuis GitHub..."
 sudo rm -rf /usr/share/sddm/themes/nasa
@@ -112,8 +116,9 @@ sudo sed -i 's|^background=.*|background=nasa2560login.png|' /usr/share/sddm/the
 
 sudo chmod 644 /usr/share/sddm/themes/nasa/*
 
+# FIX SDDM (PRIORITÉ MAXIMALE : 99-...)
 sudo mkdir -p /etc/sddm.conf.d
-cat <<EOF | sudo tee /etc/sddm.conf.d/x11_strict.conf > /dev/null
+cat <<EOF | sudo tee /etc/sddm.conf.d/99-x11_strict.conf > /dev/null
 [Theme]
 Current=nasa
 
@@ -305,7 +310,7 @@ else
 fi
 
 # --- DEMANDE DE REDÉMARRAGE FINALE ---
-MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Nettoyage du bug noyau effectué.\n- Thème SDDM 'NASA' installé (fond d'écran validé).\n- Écran Splash NASA configuré.\n- Configuration 100% X11.\n\nVoulez-vous redémarrer maintenant ?"
+MSG_FIN="DÉPLOIEMENT TERMINÉ\n\n- Nettoyage du bug noyau effectué.\n- Thème SDDM 'NASA' validé.\n- Clavier virtuel purgé.\n- Configuration 100% X11.\n\nVoulez-vous redémarrer maintenant ?"
 
 if whiptail --title "SUCCÈS" --yesno "$MSG_FIN" 15 70; then
     clear
